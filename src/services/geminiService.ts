@@ -43,7 +43,18 @@ export async function generateQuestions(topic: string, type: 'exercise' | 'test'
     model: "gemini-3-flash-preview",
     contents: `Generate ${count} ${type === 'exercise' ? 'exercise' : 'test'} questions in Arabic for the topic: "${topic}".
     Level: ${level}
-    Return a JSON array of objects with: { "id": string, "text": string, "type": "open", "level": "${level}" }`,
+    Include a mix of these skills: 
+    "مطابقة" (Matching), "توصيل" (Connecting), "اختيار من متعدد" (MCQ), "صح وخطأ" (TF), "الحصيلة اللغوية" (Vocabulary), "السلامة اللغوية" (Grammar), "إكمال الحرف الناقص" (Missing Letter), "أكتب ما يملى عليك" (Dictation), "علل" (Explain Why), "رتب" (Arrange), "تحليل الكلمات" (Word Analysis), "تكوين كلمات" (Formation), "معاني الكلمات" (Meanings), "الجموع" (Plurals), "هذا وهذه" (Demonstratives), "هنا وهناك" (Place Adverbs), "أكبر وأصغر" (Comparison).
+
+    For "mcq", include "options" (4 strings).
+    For "tf", include "options" (["صح", "خطأ"]).
+    For "fill", include "word" and "blankIndex".
+    For "match", include "matchPairs" (array of {image: string, letter: string}).
+    For "arrange", include "items" (array of strings to sort).
+    For "analysis", include "word" and "syllables" (array of parts).
+    For "math", include "text" like "5 [؟] 3" and "correctAnswer" like ">".
+
+    Return a JSON array: { "id": string, "text": string, "type": string, "skill": string, "level": "${level}", "options"?: string[], "word"?: string, "blankIndex"?: number, "matchPairs"?: any[], "items"?: string[], "syllables"?: string[], "correctAnswer": string }`,
     config: {
       responseMimeType: "application/json",
       responseSchema: {
@@ -53,10 +64,18 @@ export async function generateQuestions(topic: string, type: 'exercise' | 'test'
           properties: {
             id: { type: Type.STRING },
             text: { type: Type.STRING },
-            type: { type: Type.STRING, enum: ["open"] },
-            level: { type: Type.STRING }
+            type: { type: Type.STRING, enum: ["mcq", "tf", "fill", "open", "match", "arrange", "math", "analysis", "formation"] },
+            skill: { type: Type.STRING },
+            level: { type: Type.STRING },
+            options: { type: Type.ARRAY, items: { type: Type.STRING } },
+            word: { type: Type.STRING },
+            blankIndex: { type: Type.INTEGER },
+            matchPairs: { type: Type.ARRAY, items: { type: Type.OBJECT, properties: { image: { type: Type.STRING }, letter: { type: Type.STRING } } } },
+            items: { type: Type.ARRAY, items: { type: Type.STRING } },
+            syllables: { type: Type.ARRAY, items: { type: Type.STRING } },
+            correctAnswer: { type: Type.STRING }
           },
-          required: ["id", "text", "type", "level"]
+          required: ["id", "text", "type", "skill", "level", "correctAnswer"]
         }
       }
     }

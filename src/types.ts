@@ -27,6 +27,7 @@ export interface TextData {
   y: number;
   fontSize: number;
   color: string;
+  fontFamily?: string;
   id: string;
 }
 
@@ -43,15 +44,18 @@ export interface ShapeData {
 
 export interface Question {
   id?: string;
-  type: 'open' | 'mcq' | 'tf' | 'fill' | 'match' | 'snippet';
+  type: 'open' | 'mcq' | 'tf' | 'fill' | 'match' | 'snippet' | 'arrange' | 'math' | 'analysis' | 'formation';
+  skill?: string;
   level: 'beginner' | 'intermediate' | 'advanced';
   text: string;
   imageUrl?: string;
   options?: string[];
   correctAnswer?: string;
-  word?: string; // For fill-in-the-blank
+  word?: string; // For fill-in-the-blank or analysis
   blankIndex?: number; // For fill-in-the-blank
   matchPairs?: { image: string; letter: string }[]; // For matching questions
+  items?: string[]; // For arrangement questions
+  syllables?: string[]; // For word analysis/formation
 }
 
 export interface StudentAnswer {
@@ -69,7 +73,7 @@ export interface BalloonGameData {
 }
 
 export interface GameState {
-  type: 'balloons' | 'sorting' | 'train' | 'matching' | 'formation';
+  type: 'balloons' | 'sorting' | 'train' | 'matching' | 'formation' | 'quiz-race' | 'word-search' | 'memory';
   level: 'easy' | 'medium' | 'hard';
   active: boolean;
   data: any;

@@ -34,18 +34,24 @@ export const BalloonsGame: React.FC<BalloonsGameProps> = ({
 }) => {
   const [balloons, setBalloons] = useState<Balloon[]>([]);
   const [score, setScore] = useState(0);
-  const [timeLeft, setTimeLeft] = useState(level === 'easy' ? 60 : level === 'medium' ? 45 : 30);
-  const [lives, setLives] = useState(level === 'easy' ? 5 : level === 'medium' ? 3 : 2);
+  const [stage, setStage] = useState(1);
+  const [timeLeft, setTimeLeft] = useState(level === 'easy' ? 180 : level === 'medium' ? 120 : 90);
+  const [lives, setLives] = useState(level === 'easy' ? 7 : level === 'medium' ? 5 : 3);
   const [isGameOver, setIsGameOver] = useState(false);
+  const [isStageTransition, setIsStageTransition] = useState(false);
   const gameLoopRef = useRef<number | null>(null);
 
-  const speedMultiplier = level === 'easy' ? 0.7 : level === 'medium' ? 1.0 : 1.3;
+  const speedMultiplier = (level === 'easy' ? 0.6 : level === 'medium' ? 0.9 : 1.2) * (1 + (stage - 1) * 0.25);
 
   useEffect(() => {
-    if (role === 'student' && !isGameOver) {
+    if (role === 'student' && !isGameOver && !isStageTransition) {
       const interval = setInterval(() => {
         setTimeLeft((prev) => {
           if (prev <= 1) {
+            if (stage < 3 && score >= stage * 150) {
+              handleNextStage();
+              return prev;
+            }
             clearInterval(interval);
             setIsGameOver(true);
             onGameOver?.();
@@ -56,7 +62,7 @@ export const BalloonsGame: React.FC<BalloonsGameProps> = ({
       }, 1000);
 
       const spawnInterval = setInterval(() => {
-        if (balloons.length < (level === 'easy' ? 8 : level === 'medium' ? 12 : 15)) {
+        if (balloons.length < (level === 'easy' ? 10 : level === 'medium' ? 15 : 20) + stage * 3) {
           const wordObj = data.words[Math.floor(Math.random() * data.words.length)];
           const newBalloon: Balloon = {
             id: Math.random().toString(36).substring(7),
@@ -65,11 +71,11 @@ export const BalloonsGame: React.FC<BalloonsGameProps> = ({
             x: Math.random() * 80 + 10,
             y: 110,
             color: COLORS[Math.floor(Math.random() * COLORS.length)],
-            speed: (Math.random() * 0.5 + 0.2) * speedMultiplier
+            speed: (Math.random() * 0.4 + 0.2) * speedMultiplier
           };
           setBalloons(prev => [...prev, newBalloon]);
         }
-      }, level === 'easy' ? 1500 : level === 'medium' ? 1000 : 700);
+      }, (level === 'easy' ? 1200 : level === 'medium' ? 800 : 600) / (1 + (stage - 1) * 0.15));
 
       const updateBalloons = () => {
         setBalloons(prev => {
@@ -93,7 +99,22 @@ export const BalloonsGame: React.FC<BalloonsGameProps> = ({
         if (gameLoopRef.current) cancelAnimationFrame(gameLoopRef.current);
       };
     }
-  }, [role, isGameOver, data]);
+  }, [role, isGameOver, isStageTransition, data, stage]);
+
+  const handleNextStage = () => {
+    setIsStageTransition(true);
+    setBalloons([]);
+    confetti({
+      particleCount: 150,
+      spread: 100,
+      origin: { y: 0.6 }
+    });
+    setTimeout(() => {
+      setStage(prev => prev + 1);
+      setTimeLeft(prev => prev + 90);
+      setIsStageTransition(false);
+    }, 4000);
+  };
 
   useEffect(() => {
     if (lives === 0 && !isGameOver) {
@@ -178,6 +199,11 @@ export const BalloonsGame: React.FC<BalloonsGameProps> = ({
         </div>
         
         <div className="bg-white/90 backdrop-blur px-6 py-3 rounded-2xl shadow-lg flex items-center gap-3 border border-white">
+          <Trophy className="text-yellow-500" />
+          <span className="text-2xl font-black text-yellow-600">المرحلة {stage}</span>
+        </div>
+        
+        <div className="bg-white/90 backdrop-blur px-6 py-3 rounded-2xl shadow-lg flex items-center gap-3 border border-white">
           <Timer className="text-blue-500" />
           <span className="text-2xl font-black text-blue-600">{timeLeft}s</span>
         </div>
@@ -216,6 +242,29 @@ export const BalloonsGame: React.FC<BalloonsGameProps> = ({
             <div className="absolute -bottom-4 left-1/2 -translate-x-1/2 w-0.5 h-8 bg-white/50" />
           </motion.div>
         ))}
+      </AnimatePresence>
+
+      {/* Stage Transition Overlay */}
+      <AnimatePresence>
+        {isStageTransition && (
+          <motion.div
+            initial={{ opacity: 0, scale: 0.5 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 1.5 }}
+            className="absolute inset-0 z-[60] flex flex-col items-center justify-center bg-emerald-600/90 backdrop-blur-md text-white"
+          >
+            <motion.div
+              animate={{ rotate: 360 }}
+              transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
+              className="mb-8"
+            >
+              <Star size={120} className="fill-white" />
+            </motion.div>
+            <h2 className="text-6xl font-black mb-4">أحسنت!</h2>
+            <p className="text-2xl font-bold">انتقلت إلى المرحلة {stage + 1}</p>
+            <p className="mt-4 text-emerald-100">استعد.. السرعة ستزداد!</p>
+          </motion.div>
+        )}
       </AnimatePresence>
 
       {/* Game Over Overlay */}

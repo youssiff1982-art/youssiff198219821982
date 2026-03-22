@@ -22,12 +22,14 @@ export const SortingGame: React.FC<SortingGameProps> = ({
 }) => {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [score, setScore] = useState(0);
-  const [timeLeft, setTimeLeft] = useState(level === 'easy' ? 90 : level === 'medium' ? 60 : 45);
+  const [stage, setStage] = useState(1);
+  const [timeLeft, setTimeLeft] = useState(level === 'easy' ? 120 : level === 'medium' ? 90 : 60);
   const [isGameOver, setIsGameOver] = useState(false);
+  const [isStageTransition, setIsStageTransition] = useState(false);
   const [feedback, setFeedback] = useState<'correct' | 'wrong' | null>(null);
 
   useEffect(() => {
-    if (role === 'student' && !isGameOver) {
+    if (role === 'student' && !isGameOver && !isStageTransition) {
       const interval = setInterval(() => {
         setTimeLeft((prev) => {
           if (prev <= 1) {
@@ -41,15 +43,16 @@ export const SortingGame: React.FC<SortingGameProps> = ({
       }, 1000);
       return () => clearInterval(interval);
     }
-  }, [role, isGameOver, onGameOver]);
+  }, [role, isGameOver, isStageTransition, onGameOver]);
 
   const handleSort = (type: 'shamsiya' | 'qamariya') => {
-    if (isGameOver || feedback) return;
+    if (isGameOver || feedback || isStageTransition) return;
 
     const currentWord = data.words[currentIndex];
     if (currentWord.type === type) {
-      setScore(s => s + 20);
-      onScoreUpdate?.(score + 20);
+      const points = 20 * stage;
+      setScore(s => s + points);
+      onScoreUpdate?.(score + points);
       setFeedback('correct');
       confetti({ particleCount: 40, spread: 60 });
     } else {
@@ -61,10 +64,29 @@ export const SortingGame: React.FC<SortingGameProps> = ({
       if (currentIndex < data.words.length - 1) {
         setCurrentIndex(i => i + 1);
       } else {
-        setIsGameOver(true);
-        onGameOver?.();
+        if (stage < 3) {
+          handleNextStage();
+        } else {
+          setIsGameOver(true);
+          onGameOver?.();
+        }
       }
     }, 1000);
+  };
+
+  const handleNextStage = () => {
+    setIsStageTransition(true);
+    confetti({
+      particleCount: 100,
+      spread: 70,
+      origin: { y: 0.6 }
+    });
+    setTimeout(() => {
+      setStage(prev => prev + 1);
+      setCurrentIndex(0);
+      setTimeLeft(prev => prev + 60); // Add 60 seconds for next stage
+      setIsStageTransition(false);
+    }, 3000);
   };
 
   if (role === 'teacher') {
@@ -106,6 +128,7 @@ export const SortingGame: React.FC<SortingGameProps> = ({
     <div className="bg-white p-8 rounded-[3rem] shadow-2xl max-w-2xl mx-auto text-center relative overflow-hidden">
       <div className="flex justify-between items-center mb-12">
         <div className="bg-orange-50 px-6 py-2 rounded-2xl text-orange-600 font-black text-xl">النقاط: {score}</div>
+        <div className="bg-yellow-50 px-6 py-2 rounded-2xl text-yellow-600 font-black text-xl">المرحلة: {stage}</div>
         <div className="bg-blue-50 px-6 py-2 rounded-2xl text-blue-600 font-black text-xl">الوقت: {timeLeft}s</div>
       </div>
 
@@ -157,6 +180,21 @@ export const SortingGame: React.FC<SortingGameProps> = ({
           )}
         </motion.div>
       )}
+
+      <AnimatePresence>
+        {isStageTransition && (
+          <motion.div
+            initial={{ opacity: 0, y: 100 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -100 }}
+            className="absolute inset-0 z-30 flex flex-col items-center justify-center bg-orange-500 text-white"
+          >
+            <Trophy size={120} className="mb-6" />
+            <h2 className="text-6xl font-black mb-2">رائع!</h2>
+            <p className="text-2xl">استعد للمرحلة {stage + 1}</p>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {isGameOver && (
         <div className="absolute inset-0 bg-white z-20 flex flex-col items-center justify-center p-8">

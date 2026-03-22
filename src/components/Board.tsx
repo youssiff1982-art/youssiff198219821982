@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Stage, Layer, Line, Image as KonvaImage, Transformer, Group, Circle, Text, Rect, RegularPolygon } from 'react-konva';
+import { Stage, Layer, Line, Image as KonvaImage, Transformer, Group, Circle, Text, Rect, RegularPolygon, Shape } from 'react-konva';
 import useImage from 'use-image';
 import { useMeasure } from 'react-use';
 import { Tool, LineData, ImageData, TextData, ShapeData } from '../types';
@@ -147,6 +147,7 @@ const EditableText = ({
         y={textObj.y}
         fontSize={textObj.fontSize}
         fill={textObj.color}
+        fontFamily={textObj.fontFamily || 'Inter'}
         draggable
         ref={shapeRef}
         onClick={onSelect}
@@ -184,7 +185,7 @@ const EditableText = ({
   );
 };
 
-export const Board: React.FC<BoardProps> = ({ 
+export const Board = React.forwardRef<any, BoardProps>(({ 
   lines, 
   images, 
   texts,
@@ -199,7 +200,7 @@ export const Board: React.FC<BoardProps> = ({
   isReadOnly = false,
   showGrid = false,
   gridSpacing = 40
-}) => {
+}, ref) => {
   const isDrawing = useRef(false);
   const stageRef = useRef<any>(null);
   const [containerRef, { width, height }] = useMeasure<HTMLDivElement>();
@@ -207,6 +208,8 @@ export const Board: React.FC<BoardProps> = ({
   const [textInput, setTextInput] = useState<{ x: number, y: number } | null>(null);
   const [inputValue, setInputValue] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
+
+  React.useImperativeHandle(ref, () => stageRef.current);
 
   useEffect(() => {
     if (textInput && inputRef.current) {
@@ -415,22 +418,60 @@ export const Board: React.FC<BoardProps> = ({
               }}
             />
           ))}
-          {lines.map((line, i) => (
-            <Line
-              key={i}
-              points={line.points}
-              stroke={line.color}
-              strokeWidth={line.width}
-              tension={line.tool === 'ruler' ? 0 : 0.5}
-              lineCap={line.tool === 'chiseled' ? 'butt' : 'round'}
-              lineJoin={line.tool === 'chiseled' ? 'miter' : 'round'}
-              globalCompositeOperation={
-                line.tool === 'eraser' ? 'destination-out' : 'source-over'
-              }
-              shadowColor={line.tool === 'gold' ? '#B8860B' : undefined}
-              shadowBlur={line.tool === 'gold' ? 5 : 0}
-            />
-          ))}
+          {lines.map((line, i) => {
+            if (line.tool === 'chiseled' || line.tool === 'calligraphy') {
+              return (
+                <Shape
+                  key={i}
+                  sceneFunc={(context, shape) => {
+                    const points = line.points;
+                    if (points.length < 2) return;
+                    
+                    const slant = line.width / 2;
+                    context.beginPath();
+                    
+                    if (points.length === 2) {
+                      context.moveTo(points[0] - slant, points[1] + slant);
+                      context.lineTo(points[0] + slant, points[1] - slant);
+                      context.strokeShape(shape);
+                    } else {
+                      // Draw a "ribbon" to simulate a slanted chiseled tip
+                      // Top edge
+                      context.moveTo(points[0] - slant, points[1] + slant);
+                      for (let j = 2; j < points.length; j += 2) {
+                        context.lineTo(points[j] - slant, points[j+1] + slant);
+                      }
+                      // Bottom edge (reverse)
+                      for (let j = points.length - 2; j >= 0; j -= 2) {
+                        context.lineTo(points[j] + slant, points[j+1] - slant);
+                      }
+                      context.closePath();
+                      context.fillShape(shape);
+                    }
+                  }}
+                  fill={line.color}
+                  stroke={line.color}
+                  strokeWidth={line.width / 4}
+                />
+              );
+            }
+            return (
+              <Line
+                key={i}
+                points={line.points}
+                stroke={line.color}
+                strokeWidth={line.width}
+                tension={line.tool === 'ruler' ? 0 : 0.5}
+                lineCap="round"
+                lineJoin="round"
+                globalCompositeOperation={
+                  line.tool === 'eraser' ? 'destination-out' : 'source-over'
+                }
+                shadowColor={line.tool === 'gold' ? '#B8860B' : undefined}
+                shadowBlur={line.tool === 'gold' ? 5 : 0}
+              />
+            );
+          })}
           {shapes.map((shape, i) => (
             <React.Fragment key={shape.id}>
               {shape.type === 'rect' && (
@@ -486,4 +527,4 @@ export const Board: React.FC<BoardProps> = ({
       </Stage>
     </div>
   );
-};
+});

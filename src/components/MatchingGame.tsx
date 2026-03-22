@@ -21,14 +21,16 @@ export const MatchingGame: React.FC<MatchingGameProps> = ({
   onGameOver 
 }) => {
   const [score, setScore] = useState(0);
-  const [timeLeft, setTimeLeft] = useState(level === 'easy' ? 90 : level === 'medium' ? 60 : 45);
+  const [stage, setStage] = useState(1);
+  const [timeLeft, setTimeLeft] = useState(level === 'easy' ? 180 : level === 'medium' ? 120 : 90);
   const [isGameOver, setIsGameOver] = useState(false);
+  const [isStageTransition, setIsStageTransition] = useState(false);
   const [selectedLeft, setSelectedLeft] = useState<string | null>(null);
   const [matches, setMatches] = useState<Record<string, string>>({});
   const [wrongMatch, setWrongMatch] = useState<{ left: string, right: string } | null>(null);
 
   useEffect(() => {
-    if (role === 'student' && !isGameOver) {
+    if (role === 'student' && !isGameOver && !isStageTransition) {
       const interval = setInterval(() => {
         setTimeLeft((prev) => {
           if (prev <= 1) {
@@ -42,31 +44,51 @@ export const MatchingGame: React.FC<MatchingGameProps> = ({
       }, 1000);
       return () => clearInterval(interval);
     }
-  }, [role, isGameOver, onGameOver]);
+  }, [role, isGameOver, isStageTransition, onGameOver]);
 
   const handleMatch = (rightId: string) => {
-    if (!selectedLeft || isGameOver || matches[selectedLeft] || Object.values(matches).includes(rightId)) return;
+    if (!selectedLeft || isGameOver || matches[selectedLeft] || Object.values(matches).includes(rightId) || isStageTransition) return;
 
     const leftItem = data.leftItems.find((i: any) => i.id === selectedLeft);
     if (leftItem.matchId === rightId) {
       const newMatches = { ...matches, [selectedLeft]: rightId };
       setMatches(newMatches);
-      setScore(s => s + 25);
-      onScoreUpdate?.(score + 25);
+      const points = 25 * stage;
+      setScore(s => s + points);
+      onScoreUpdate?.(score + points);
       setSelectedLeft(null);
       confetti({ particleCount: 30, spread: 50 });
 
       if (Object.keys(newMatches).length === data.leftItems.length) {
-        setTimeout(() => {
-          setIsGameOver(true);
-          onGameOver?.();
-        }, 1000);
+        if (stage < 3) {
+          handleNextStage();
+        } else {
+          setTimeout(() => {
+            setIsGameOver(true);
+            onGameOver?.();
+          }, 1000);
+        }
       }
     } else {
       setWrongMatch({ left: selectedLeft, right: rightId });
       setTimeout(() => setWrongMatch(null), 1000);
       setSelectedLeft(null);
     }
+  };
+
+  const handleNextStage = () => {
+    setIsStageTransition(true);
+    confetti({
+      particleCount: 100,
+      spread: 70,
+      origin: { y: 0.6 }
+    });
+    setTimeout(() => {
+      setStage(prev => prev + 1);
+      setMatches({});
+      setTimeLeft(prev => prev + 60);
+      setIsStageTransition(false);
+    }, 3000);
   };
 
   if (role === 'teacher') {
@@ -106,6 +128,7 @@ export const MatchingGame: React.FC<MatchingGameProps> = ({
     <div className="bg-blue-50 p-8 rounded-[3rem] shadow-2xl max-w-5xl mx-auto text-center relative overflow-hidden min-h-[600px] flex flex-col">
       <div className="flex justify-between items-center mb-8">
         <div className="bg-white/80 backdrop-blur-sm px-6 py-2 rounded-2xl text-blue-600 font-black text-xl shadow-sm">النقاط: {score}</div>
+        <div className="bg-yellow-50 px-6 py-2 rounded-2xl text-yellow-600 font-black text-xl shadow-sm">المرحلة: {stage}</div>
         <div className="bg-white/80 backdrop-blur-sm px-6 py-2 rounded-2xl text-indigo-600 font-black text-xl shadow-sm">الوقت: {timeLeft}s</div>
       </div>
 
@@ -155,6 +178,21 @@ export const MatchingGame: React.FC<MatchingGameProps> = ({
           })}
         </div>
       </div>
+
+      <AnimatePresence>
+        {isStageTransition && (
+          <motion.div
+            initial={{ y: -500 }}
+            animate={{ y: 0 }}
+            exit={{ y: 500 }}
+            className="absolute inset-0 z-30 flex flex-col items-center justify-center bg-blue-600 text-white"
+          >
+            <LinkIcon size={120} className="mb-6 animate-spin" />
+            <h2 className="text-6xl font-black mb-2">رائع!</h2>
+            <p className="text-2xl">المرحلة {stage + 1} بانتظارك</p>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {isGameOver && (
         <div className="absolute inset-0 bg-white z-20 flex flex-col items-center justify-center p-8">

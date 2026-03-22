@@ -41,7 +41,7 @@ async function startServer() {
         teacherId: socket.id,
         students: {},
         isLocked: false,
-        boardData: { lines: [], images: [], texts: [] },
+        boardData: { lines: [], images: [], texts: [], shapes: [], showGrid: false, gridSpacing: 40 },
         currentQuestion: null,
         answers: {},
         gameState: null,
@@ -69,11 +69,8 @@ async function startServer() {
     socket.on("draw", ({ code, data }) => {
       if (sessions[code]) {
         sessions[code].boardData = data;
-        // Always sync teacher's board to students
-        // Or sync student's board if it's locked (teacher is controlling)
-        if (socket.id === sessions[code].teacherId || sessions[code].isLocked) {
-          socket.to(code).emit("sync-board", data);
-        }
+        // Broadcast to everyone else in the session
+        socket.to(code).emit("sync-board", data);
       }
     });
 
@@ -139,9 +136,15 @@ async function startServer() {
       }
     });
 
+    socket.on("stop-question", ({ code }) => {
+      if (sessions[code] && sessions[code].teacherId === socket.id) {
+        io.to(code).emit("question-stopped");
+      }
+    });
+
     socket.on("clear-board", ({ code }) => {
       if (sessions[code] && sessions[code].teacherId === socket.id) {
-        sessions[code].boardData = { lines: [], images: [], texts: [] };
+        sessions[code].boardData = { lines: [], images: [], texts: [], shapes: [], showGrid: false, gridSpacing: 40 };
         io.to(code).emit("sync-board", sessions[code].boardData);
       }
     });

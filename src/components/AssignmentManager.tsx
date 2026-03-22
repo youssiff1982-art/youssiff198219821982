@@ -41,12 +41,13 @@ export const AssignmentManager: React.FC<AssignmentManagerProps> = ({
     }
   };
 
-  const handleAddQuestion = () => {
+  const handleAddQuestion = (type: Question['type'] = 'open') => {
     const newQuestion: Question = {
       id: Math.random().toString(36).substring(7),
-      type: 'open',
+      type,
       level: 'intermediate',
       text: '',
+      options: type === 'mcq' ? ['', '', '', ''] : undefined,
     };
     setQuestions([...questions, newQuestion]);
   };
@@ -133,10 +134,10 @@ export const AssignmentManager: React.FC<AssignmentManagerProps> = ({
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
                   <h4 className="font-bold text-gray-800">الأسئلة</h4>
-                  <div className="flex gap-4">
+                  <div className="flex gap-4 flex-wrap justify-end">
                     <label className="text-emerald-600 text-sm font-bold flex items-center gap-1 hover:underline cursor-pointer">
                       <Upload size={16} />
-                      رفع صور/أوراق عمل
+                      رفع صور
                       <input type="file" className="hidden" onChange={handleFileUpload} accept="image/*" multiple />
                     </label>
                     <button
@@ -147,47 +148,264 @@ export const AssignmentManager: React.FC<AssignmentManagerProps> = ({
                       {isGenerating ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />}
                       توليد بالذكاء الاصطناعي
                     </button>
-                    <button
-                      onClick={handleAddQuestion}
-                      className="text-emerald-600 text-sm font-bold flex items-center gap-1 hover:underline"
-                    >
-                      <Plus size={16} />
-                      إضافة سؤال
-                    </button>
+                    <div className="relative group">
+                      <button className="text-emerald-600 text-sm font-bold flex items-center gap-1 hover:underline">
+                        <Plus size={16} />
+                        إضافة سؤال
+                      </button>
+                      <div className="absolute left-0 top-full mt-2 bg-white shadow-2xl rounded-2xl p-4 border border-gray-100 hidden group-hover:grid grid-cols-2 gap-2 z-50 w-80 max-h-96 overflow-y-auto">
+                        <button onClick={() => handleAddQuestion('mcq')} className="text-xs font-bold p-2 hover:bg-emerald-50 rounded-xl text-right">اختيار من متعدد</button>
+                        <button onClick={() => handleAddQuestion('tf')} className="text-xs font-bold p-2 hover:bg-emerald-50 rounded-xl text-right">صح وخطأ</button>
+                        <button onClick={() => handleAddQuestion('fill')} className="text-xs font-bold p-2 hover:bg-emerald-50 rounded-xl text-right">إكمال الحرف</button>
+                        <button onClick={() => handleAddQuestion('open')} className="text-xs font-bold p-2 hover:bg-emerald-50 rounded-xl text-right">سؤال مقالي</button>
+                        <button onClick={() => handleAddQuestion('match')} className="text-xs font-bold p-2 hover:bg-emerald-50 rounded-xl text-right">توصيل/مطابقة</button>
+                        <button onClick={() => handleAddQuestion('arrange')} className="text-xs font-bold p-2 hover:bg-emerald-50 rounded-xl text-right">ترتيب</button>
+                        <button onClick={() => handleAddQuestion('analysis')} className="text-xs font-bold p-2 hover:bg-emerald-50 rounded-xl text-right">تحليل كلمات</button>
+                        <button onClick={() => handleAddQuestion('formation')} className="text-xs font-bold p-2 hover:bg-emerald-50 rounded-xl text-right">تكوين كلمات</button>
+                        <button onClick={() => handleAddQuestion('math')} className="text-xs font-bold p-2 hover:bg-emerald-50 rounded-xl text-right">أكبر وأصغر</button>
+                      </div>
+                    </div>
                   </div>
                 </div>
 
                 {questions.map((q, idx) => (
-                  <div key={q.id} className="p-4 bg-gray-50 rounded-2xl border border-gray-100 space-y-3">
+                  <div key={q.id} className="p-6 bg-gray-50 rounded-[2rem] border border-gray-100 space-y-4 relative group">
                     <div className="flex items-center justify-between">
-                      <span className="text-xs font-bold text-gray-400">سؤال {idx + 1}</span>
+                      <div className="flex items-center gap-2">
+                        <span className="bg-emerald-600 text-white w-8 h-8 rounded-xl flex items-center justify-center font-black text-xs">
+                          {idx + 1}
+                        </span>
+                        <span className="text-xs font-bold text-gray-400">
+                          {q.type === 'mcq' ? 'اختيار من متعدد' : 
+                           q.type === 'tf' ? 'صح وخطأ' : 
+                           q.type === 'fill' ? 'إكمال الحرف' : 
+                           q.type === 'match' ? 'توصيل' : 
+                           q.type === 'arrange' ? 'ترتيب' :
+                           q.type === 'analysis' ? 'تحليل' :
+                           q.type === 'formation' ? 'تكوين' :
+                           q.type === 'math' ? 'مقارنة' : 'سؤال مقالي'}
+                        </span>
+                      </div>
                       <button
                         onClick={() => setQuestions(questions.filter((_, i) => i !== idx))}
-                        className="text-red-400 hover:text-red-600"
+                        className="text-red-400 hover:text-red-600 p-2 hover:bg-red-50 rounded-xl transition-all"
                       >
-                        <Trash2 size={16} />
+                        <Trash2 size={18} />
                       </button>
                     </div>
-                    <textarea
-                      value={q.text}
-                      onChange={(e) => {
-                        const updated = [...questions];
-                        updated[idx].text = e.target.value;
-                        setQuestions(updated);
-                      }}
-                      placeholder="اكتب السؤال هنا..."
-                      className="w-full px-4 py-2 rounded-xl border border-gray-200 focus:ring-2 focus:ring-emerald-500 outline-none resize-none"
-                      rows={2}
-                    />
-                    {q.imageUrl && (
-                      <div className="relative w-full h-48 rounded-xl overflow-hidden border border-gray-200 bg-white">
-                        <img src={q.imageUrl} alt="" className="w-full h-full object-contain" referrerPolicy="no-referrer" />
-                        <div className="absolute top-2 right-2 bg-white/80 p-1 rounded-lg text-xs font-bold text-emerald-600 flex items-center gap-1">
-                          <ImageIcon size={12} />
-                          صورة مرفقة
+
+                    <div className="space-y-4">
+                      <textarea
+                        value={q.text}
+                        onChange={(e) => {
+                          const updated = [...questions];
+                          updated[idx].text = e.target.value;
+                          setQuestions(updated);
+                        }}
+                        placeholder="اكتب السؤال هنا..."
+                        className="w-full px-5 py-3 rounded-2xl border border-gray-200 focus:ring-2 focus:ring-emerald-500 outline-none resize-none font-bold"
+                        rows={2}
+                      />
+
+                      {q.type === 'arrange' && (
+                        <div className="space-y-2">
+                          <p className="text-xs font-bold text-gray-400">العناصر المراد ترتيبها:</p>
+                          {(q.items || ['', '']).map((item, iIdx) => (
+                            <input
+                              key={iIdx}
+                              type="text"
+                              value={item}
+                              onChange={(e) => {
+                                const updated = [...questions];
+                                const items = [...(updated[idx].items || ['', ''])];
+                                items[iIdx] = e.target.value;
+                                updated[idx].items = items;
+                                setQuestions(updated);
+                              }}
+                              placeholder={`عنصر ${iIdx + 1}`}
+                              className="w-full px-4 py-2 rounded-xl border border-gray-200 text-sm font-bold outline-none"
+                            />
+                          ))}
+                          <button
+                            onClick={() => {
+                              const updated = [...questions];
+                              updated[idx].items = [...(updated[idx].items || []), ''];
+                              setQuestions(updated);
+                            }}
+                            className="text-emerald-600 text-xs font-bold flex items-center gap-1"
+                          >
+                            <Plus size={14} /> إضافة عنصر
+                          </button>
                         </div>
-                      </div>
-                    )}
+                      )}
+
+                      {(q.type === 'analysis' || q.type === 'formation') && (
+                        <div className="space-y-2">
+                          <input
+                            type="text"
+                            value={q.word || ''}
+                            onChange={(e) => {
+                              const updated = [...questions];
+                              updated[idx].word = e.target.value;
+                              setQuestions(updated);
+                            }}
+                            placeholder="الكلمة الكاملة"
+                            className="w-full px-4 py-2 rounded-xl border border-gray-200 text-sm font-bold outline-none"
+                          />
+                          <p className="text-xs font-bold text-gray-400">المقاطع:</p>
+                          <div className="flex gap-2 flex-wrap">
+                            {(q.syllables || ['', '']).map((s, sIdx) => (
+                              <input
+                                key={sIdx}
+                                type="text"
+                                value={s}
+                                onChange={(e) => {
+                                  const updated = [...questions];
+                                  const syllables = [...(updated[idx].syllables || ['', ''])];
+                                  syllables[sIdx] = e.target.value;
+                                  updated[idx].syllables = syllables;
+                                  setQuestions(updated);
+                                }}
+                                className="w-16 px-2 py-2 rounded-xl border border-gray-200 text-sm font-bold text-center outline-none"
+                              />
+                            ))}
+                            <button
+                              onClick={() => {
+                                const updated = [...questions];
+                                updated[idx].syllables = [...(updated[idx].syllables || []), ''];
+                                setQuestions(updated);
+                              }}
+                              className="w-8 h-8 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center"
+                            >
+                              <Plus size={14} />
+                            </button>
+                          </div>
+                        </div>
+                      )}
+
+                      {q.type === 'mcq' && (
+                        <div className="grid grid-cols-2 gap-3">
+                          {q.options?.map((opt, optIdx) => (
+                            <input
+                              key={optIdx}
+                              type="text"
+                              value={opt}
+                              onChange={(e) => {
+                                const updated = [...questions];
+                                if (updated[idx].options) {
+                                  updated[idx].options![optIdx] = e.target.value;
+                                  setQuestions(updated);
+                                }
+                              }}
+                              placeholder={`خيار ${optIdx + 1}`}
+                              className="px-4 py-2 rounded-xl border border-gray-200 text-sm font-bold outline-none focus:ring-2 focus:ring-emerald-500"
+                            />
+                          ))}
+                        </div>
+                      )}
+
+                      {q.type === 'fill' && (
+                        <div className="flex gap-4 items-center bg-white p-4 rounded-2xl border border-gray-100">
+                          <input
+                            type="text"
+                            value={q.word || ''}
+                            onChange={(e) => {
+                              const updated = [...questions];
+                              updated[idx].word = e.target.value;
+                              setQuestions(updated);
+                            }}
+                            placeholder="الكلمة (مثلاً: كتاب)"
+                            className="flex-1 px-4 py-2 rounded-xl border border-gray-200 text-sm font-bold outline-none"
+                          />
+                          <input
+                            type="number"
+                            value={q.blankIndex || 0}
+                            onChange={(e) => {
+                              const updated = [...questions];
+                              updated[idx].blankIndex = parseInt(e.target.value);
+                              setQuestions(updated);
+                            }}
+                            placeholder="مكان الفراغ (0, 1...)"
+                            className="w-24 px-4 py-2 rounded-xl border border-gray-200 text-sm font-bold outline-none"
+                          />
+                        </div>
+                      )}
+
+                      {q.type === 'match' && (
+                        <div className="space-y-3 bg-white p-4 rounded-2xl border border-gray-100">
+                          <p className="text-xs font-bold text-gray-400 mb-2">أزواج المطابقة (صورة + حرف/كلمة):</p>
+                          {(q.matchPairs || [{ image: '', letter: '' }]).map((pair, pIdx) => (
+                            <div key={pIdx} className="flex gap-2 items-center">
+                              <input
+                                type="text"
+                                value={pair.image}
+                                onChange={(e) => {
+                                  const updated = [...questions];
+                                  const pairs = [...(updated[idx].matchPairs || [{ image: '', letter: '' }])];
+                                  pairs[pIdx].image = e.target.value;
+                                  updated[idx].matchPairs = pairs;
+                                  setQuestions(updated);
+                                }}
+                                placeholder="رابط الصورة أو وصفها"
+                                className="flex-1 px-3 py-2 rounded-xl border border-gray-200 text-xs font-bold outline-none"
+                              />
+                              <input
+                                type="text"
+                                value={pair.letter}
+                                onChange={(e) => {
+                                  const updated = [...questions];
+                                  const pairs = [...(updated[idx].matchPairs || [{ image: '', letter: '' }])];
+                                  pairs[pIdx].letter = e.target.value;
+                                  updated[idx].matchPairs = pairs;
+                                  setQuestions(updated);
+                                }}
+                                placeholder="الحرف/الكلمة"
+                                className="w-24 px-3 py-2 rounded-xl border border-gray-200 text-xs font-bold outline-none"
+                              />
+                              <button 
+                                onClick={() => {
+                                  const updated = [...questions];
+                                  const pairs = (updated[idx].matchPairs || []).filter((_, i) => i !== pIdx);
+                                  updated[idx].matchPairs = pairs;
+                                  setQuestions(updated);
+                                }}
+                                className="text-red-400 hover:text-red-600"
+                              >
+                                <Trash2 size={14} />
+                              </button>
+                            </div>
+                          ))}
+                          <button
+                            onClick={() => {
+                              const updated = [...questions];
+                              const pairs = [...(updated[idx].matchPairs || []), { image: '', letter: '' }];
+                              updated[idx].matchPairs = pairs;
+                              setQuestions(updated);
+                            }}
+                            className="text-emerald-600 text-xs font-bold flex items-center gap-1 hover:underline"
+                          >
+                            <Plus size={14} />
+                            إضافة زوج جديد
+                          </button>
+                        </div>
+                      )}
+
+                      {q.imageUrl && (
+                        <div className="relative w-full h-48 rounded-2xl overflow-hidden border-2 border-white shadow-sm bg-white">
+                          <img src={q.imageUrl} alt="" className="w-full h-full object-contain" referrerPolicy="no-referrer" />
+                          <button 
+                            onClick={() => {
+                              const updated = [...questions];
+                              delete updated[idx].imageUrl;
+                              setQuestions(updated);
+                            }}
+                            className="absolute top-2 left-2 bg-red-500 text-white p-1 rounded-lg hover:bg-red-600 shadow-lg"
+                          >
+                            <Trash2 size={12} />
+                          </button>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 ))}
               </div>

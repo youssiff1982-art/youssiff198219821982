@@ -12,8 +12,9 @@ import {
   Sparkles, Trash2, ChevronRight, ChevronLeft,
   TrainFront, BookOpen, Link as LinkIcon,
   Square, Circle as CircleIcon, Triangle, Ruler,
-  Video, Maximize2, Rows, Maximize, Minimize, Check, X, Star, Smile, Frown
+  Video, Maximize2, Rows, Maximize, Minimize, Check, X, Star, Smile, Frown, Languages, Scan, Rocket, Search, Brain
 } from 'lucide-react';
+import { GoogleGenAI } from "@google/genai";
 import { motion, AnimatePresence } from 'motion/react';
 import { Board } from './components/Board';
 import { ResourceLibrary } from './components/ResourceLibrary';
@@ -22,6 +23,9 @@ import { SortingGame } from './components/SortingGame';
 import { TrainGame } from './components/TrainGame';
 import { FormationGame } from './components/FormationGame';
 import { MatchingGame } from './components/MatchingGame';
+import { QuizRaceGame } from './components/QuizRaceGame';
+import { WordSearchGame } from './components/WordSearchGame';
+import { MemoryGame } from './components/MemoryGame';
 import { AssignmentManager } from './components/AssignmentManager';
 import { AssignmentStudentView } from './components/AssignmentStudentView';
 import { Tool, LineData, ImageData, TextData, ShapeData, Question, StudentAnswer, GameState, Assignment, Submission } from './types';
@@ -56,10 +60,13 @@ export default function App() {
   const [gridSpacing, setGridSpacing] = useState(40);
   
   // Teacher State
-  const [activeTab, setActiveTab] = useState<'explain' | 'questions' | 'games' | 'exercises' | 'tests' | 'pricing'>('explain');
+  const [activeTab, setActiveTab] = useState<'explain' | 'questions' | 'games' | 'exercises' | 'tests' | 'pricing' | 'question-types'>('explain');
   const [assignments, setAssignments] = useState<Assignment[]>([]);
   const [submissions, setSubmissions] = useState<Submission[]>([]);
   const [questionLevel, setQuestionLevel] = useState<'beginner' | 'intermediate' | 'advanced'>('beginner');
+  const [isGeneratingQuestion, setIsGeneratingQuestion] = useState(false);
+  const [selectedQuestionType, setSelectedQuestionType] = useState<string | null>(null);
+  const [aiPrompt, setAiPrompt] = useState('');
   const [students, setStudents] = useState<Record<string, any>>({});
   const [answers, setAnswers] = useState<Record<string, StudentAnswer>>({});
   const [currentQuestion, setCurrentQuestion] = useState<Question | null>(null);
@@ -77,6 +84,14 @@ export default function App() {
   const [feedback, setFeedback] = useState<{ score?: number; feedback?: string; rating?: string } | null>(null);
   const [isLargeFont, setIsLargeFont] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [isHandwritingPanelOpen, setIsHandwritingPanelOpen] = useState(false);
+  const [handwritingText, setHandwritingText] = useState('');
+  const [handwritingFont, setHandwritingFont] = useState<'Aref Ruqaa' | 'Amiri' | 'Reem Kufi' | 'Vibes' | 'Marhey' | 'Lemonada' | 'Katibeh'>('Aref Ruqaa');
+  
+  const [isOCRSelectorActive, setIsOCRSelectorActive] = useState(false);
+  const [ocrBox, setOcrBox] = useState({ x: 100, y: 100, width: 300, height: 150 });
+  const [isOCRProcessing, setIsOCRProcessing] = useState(false);
+  const stageRef = useRef<any>(null);
 
   useEffect(() => {
     const handleFullscreenChange = () => {
@@ -218,7 +233,7 @@ export default function App() {
       setIsJoined(true);
     });
 
-    socket.on('joined-success', ({ isLocked, boardData, currentQuestion }) => {
+    socket.on('joined-success', ({ isLocked, boardData, currentQuestion, gameState }) => {
       setIsJoined(true);
       setIsLocked(isLocked);
       if (boardData) {
@@ -230,6 +245,7 @@ export default function App() {
         setGridSpacing(boardData.gridSpacing || 40);
       }
       setReceivedQuestion(currentQuestion);
+      setGameState(gameState);
     });
 
     socket.on('student-joined', (updatedStudents) => {
@@ -290,6 +306,10 @@ export default function App() {
 
     socket.on('game-stopped', () => {
       setGameState(null);
+    });
+
+    socket.on('question-stopped', () => {
+      setReceivedQuestion(null);
     });
 
     socket.on('clear-board', () => {
@@ -363,9 +383,19 @@ export default function App() {
   const handleDraw = useCallback((newLines: LineData[]) => {
     setLines(newLines);
     if (sessionCode) {
-      socket.emit('draw', { code: sessionCode, data: { lines: newLines, images, texts, shapes } });
+      socket.emit('draw', { 
+        code: sessionCode, 
+        data: { 
+          lines: newLines, 
+          images, 
+          texts, 
+          shapes,
+          showGrid,
+          gridSpacing
+        } 
+      });
     }
-  }, [sessionCode, images, texts, shapes]);
+  }, [sessionCode, images, texts, shapes, showGrid, gridSpacing]);
 
   const syncBoard = useCallback((newLines: LineData[], newImages: ImageData[], newTexts: TextData[], newShapes: ShapeData[], newShowGrid?: boolean, newGridSpacing?: number) => {
     if (sessionCode) {
@@ -391,13 +421,101 @@ export default function App() {
     }
   }, [sessionCode, isLocked]);
 
+  const performOCR = async () => {
+    if (!stageRef.current) return;
+    setIsOCRProcessing(true);
+    try {
+      const dataUrl = stageRef.current.toDataURL({
+        x: ocrBox.x,
+        y: ocrBox.y,
+        width: ocrBox.width,
+        height: ocrBox.height,
+        pixelRatio: 2
+      });
+
+      const base64Data = dataUrl.split(',')[1];
+      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+      const response = await ai.models.generateContent({
+        model: "gemini-3-flash-preview",
+        contents: [
+          {
+            parts: [
+              { text: "قم بتحويل النص المكتوب بخط اليد في هذه الصورة إلى نص آلي. أعد النص فقط بدون أي شرح إضافي. إذا لم تجد نصاً، أعد كلمة 'فارغ'." },
+              { inlineData: { mimeType: "image/png", data: base64Data } }
+            ]
+          }
+        ]
+      });
+
+      const resultText = response.text?.trim();
+      if (resultText && resultText !== 'فارغ') {
+        const newText: TextData = {
+          text: resultText,
+          x: ocrBox.x + 10,
+          y: ocrBox.y + 10,
+          fontSize: Math.min(ocrBox.height * 0.6, 40),
+          color: color,
+          fontFamily: handwritingFont,
+          id: Math.random().toString(36).substring(7),
+        };
+        
+        // Remove lines that are mostly inside the box
+        const newLines = lines.filter(line => {
+          const points = line.points;
+          let insideCount = 0;
+          for (let i = 0; i < points.length; i += 2) {
+            const px = points[i];
+            const py = points[i+1];
+            if (px >= ocrBox.x && px <= ocrBox.x + ocrBox.width && 
+                py >= ocrBox.y && py <= ocrBox.y + ocrBox.height) {
+              insideCount++;
+            }
+          }
+          return (insideCount / (points.length / 2)) < 0.7;
+        });
+
+        const newTexts = [...texts, newText];
+        setTexts(newTexts);
+        setLines(newLines);
+        syncBoard(newLines, images, newTexts, shapes);
+        setIsOCRSelectorActive(false);
+      }
+    } catch (error) {
+      console.error("OCR Error:", error);
+    } finally {
+      setIsOCRProcessing(false);
+    }
+  };
+
+  const addHandwritingToBoard = () => {
+    if (!handwritingText.trim()) return;
+    const newText: TextData = {
+      text: handwritingText,
+      x: 200,
+      y: 200,
+      fontSize: 60,
+      color: color,
+      fontFamily: handwritingFont,
+      id: Math.random().toString(36).substring(7),
+    };
+    const newTexts = [...texts, newText];
+    setTexts(newTexts);
+    syncBoard(lines, images, newTexts, shapes);
+    setHandwritingText('');
+  };
+
   const sendQuestion = useCallback((q: Question) => {
-    setCurrentQuestion(q);
+    setReceivedQuestion(q);
     if (sessionCode) {
-      socket.emit('send-question', { code: sessionCode, question: q });
+      socket.emit('new-question', { code: sessionCode, question: q });
       setActiveTab('explain');
-    } else {
-      // alert('يرجى إنشاء حصة أولاً');
+    }
+  }, [sessionCode]);
+
+  const stopQuestion = useCallback(() => {
+    setReceivedQuestion(null);
+    if (sessionCode) {
+      socket.emit('stop-question', { code: sessionCode });
     }
   }, [sessionCode]);
 
@@ -545,6 +663,48 @@ export default function App() {
     ].sort(() => Math.random() - 0.5);
     const gameData = { leftItems, rightItems };
     socket.emit('start-game', { code: sessionCode, type: 'matching', level: selectedGameLevel, data: gameData });
+  };
+
+  const startQuizRaceGame = () => {
+    // Use current questions for the race
+    if (assignments.length > 0) {
+      const lastAssignment = assignments[assignments.length - 1];
+      socket.emit('start-game', { 
+        code: sessionCode, 
+        type: 'quiz-race', 
+        level: selectedGameLevel, 
+        data: { questions: lastAssignment.questions } 
+      });
+    } else {
+      // Fallback to some default questions if no assignment exists
+      const defaultQuestions: Question[] = [
+        { id: '1', type: 'mcq', level: 'beginner', text: 'ما هو الحرف الأول في كلمة "أسد"؟', options: ['أ', 'ب', 'ت', 'ث'], correctAnswer: 'أ' },
+        { id: '2', type: 'tf', level: 'beginner', text: 'كلمة "تفاحة" تبدأ بحرف التاء.', correctAnswer: 'صح' },
+        { id: '3', type: 'fill', level: 'beginner', text: 'أكمل الحرف الناقص: بـ_ـة', word: 'بطة', blankIndex: 1, correctAnswer: 'ط' }
+      ];
+      socket.emit('start-game', { 
+        code: sessionCode, 
+        type: 'quiz-race', 
+        level: selectedGameLevel, 
+        data: { questions: defaultQuestions } 
+      });
+    }
+  };
+
+  const startWordSearchGame = () => {
+    const gameData = {
+      words: ['أَسَد', 'بَطَّة', 'جَمَل', 'دِيك', 'فِيل', 'نَمِر'],
+      gridSize: selectedGameLevel === 'easy' ? 8 : selectedGameLevel === 'medium' ? 10 : 12
+    };
+    socket.emit('start-game', { code: sessionCode, type: 'word-search', level: selectedGameLevel, data: gameData });
+  };
+
+  const startMemoryGame = () => {
+    const pairs = [
+      { content: 'أ' }, { content: 'ب' }, { content: 'ت' }, { content: 'ث' },
+      { content: 'ج' }, { content: 'ح' }, { content: 'خ' }, { content: 'د' }
+    ];
+    socket.emit('start-game', { code: sessionCode, type: 'memory', level: selectedGameLevel, data: { pairs } });
   };
 
   const stopGame = () => {
@@ -890,19 +1050,38 @@ export default function App() {
         {role === 'teacher' && (
           <div className="flex items-center gap-2 bg-gray-100 p-1 rounded-xl">
             <button 
-              onClick={() => setActiveTab('explain')}
+              onClick={() => {
+                setActiveTab('explain');
+                stopQuestion();
+                stopGame();
+              }}
               className={`px-6 py-2 rounded-lg text-sm font-bold transition-all ${activeTab === 'explain' ? 'bg-white text-emerald-600 shadow-sm' : 'text-gray-500'}`}
             >
               شاشة الشرح
             </button>
             <button 
-              onClick={() => setActiveTab('questions')}
+              onClick={() => {
+                setActiveTab('questions');
+                stopGame();
+              }}
               className={`px-6 py-2 rounded-lg text-sm font-bold transition-all ${activeTab === 'questions' ? 'bg-white text-emerald-600 shadow-sm' : 'text-gray-500'}`}
             >
               إدارة الأسئلة
             </button>
             <button 
-              onClick={() => setActiveTab('games')}
+              onClick={() => {
+                setActiveTab('question-types');
+                stopGame();
+              }}
+              className={`px-6 py-2 rounded-lg text-sm font-bold transition-all ${activeTab === 'question-types' ? 'bg-white text-emerald-600 shadow-sm' : 'text-gray-500'}`}
+            >
+              الأسئلة
+            </button>
+            <button 
+              onClick={() => {
+                setActiveTab('games');
+                stopQuestion();
+              }}
               className={`px-6 py-2 rounded-lg text-sm font-bold transition-all ${activeTab === 'games' ? 'bg-white text-emerald-600 shadow-sm' : 'text-gray-500'}`}
             >
               الألعاب التعليمية
@@ -1026,6 +1205,22 @@ export default function App() {
                 {t === 'triangle' && <Triangle size={20} />}
               </button>
             ))}
+            
+            <button
+              onClick={() => setIsHandwritingPanelOpen(!isHandwritingPanelOpen)}
+              className={`p-3 rounded-2xl transition-all ${isHandwritingPanelOpen ? 'bg-purple-600 text-white shadow-lg scale-110' : 'text-gray-400 hover:bg-gray-100 hover:text-purple-600'} cursor-pointer active:scale-95`}
+              title="محول الخط الأنيق"
+            >
+              <Languages size={20} />
+            </button>
+
+            <button
+              onClick={() => setIsOCRSelectorActive(!isOCRSelectorActive)}
+              className={`p-3 rounded-2xl transition-all ${isOCRSelectorActive ? 'bg-purple-600 text-white shadow-lg scale-110' : 'text-gray-400 hover:bg-gray-100 hover:text-purple-600'} cursor-pointer active:scale-95`}
+              title="تحويل الكتابة اليدوية لنص"
+            >
+              <Scan size={20} />
+            </button>
           </div>
 
           <div className="w-10 h-px bg-gray-200" />
@@ -1132,6 +1327,26 @@ export default function App() {
             <div className="h-full">
               {activeTab === 'explain' && (
                 <div className="h-full flex flex-col gap-4">
+                  {receivedQuestion && (
+                    <div className="bg-white p-4 rounded-2xl shadow-sm border border-emerald-100 flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <div className="bg-emerald-100 text-emerald-600 p-2 rounded-xl">
+                          <HelpCircle size={20} />
+                        </div>
+                        <div>
+                          <p className="font-bold text-gray-900">سؤال نشط: {receivedQuestion.text}</p>
+                          <p className="text-xs text-gray-500">الطلاب يشاهدون هذا السؤال الآن</p>
+                        </div>
+                      </div>
+                      <button 
+                        onClick={stopQuestion}
+                        className="bg-red-50 text-red-600 px-4 py-2 rounded-xl font-bold hover:bg-red-100 transition-all flex items-center gap-2"
+                      >
+                        <X size={18} />
+                        إيقاف السؤال
+                      </button>
+                    </div>
+                  )}
                   <div className="flex-1 relative">
                     <Board 
                       lines={lines} 
@@ -1157,8 +1372,400 @@ export default function App() {
                       isReadOnly={false}
                       showGrid={showGrid}
                       gridSpacing={gridSpacing}
+                      ref={stageRef}
                     />
+
+                    {/* OCR Selector Box */}
+                    <AnimatePresence>
+                      {isOCRSelectorActive && (
+                        <motion.div
+                          initial={{ opacity: 0, scale: 0.9 }}
+                          animate={{ opacity: 1, scale: 1 }}
+                          exit={{ opacity: 0, scale: 0.9 }}
+                          className="absolute z-50 border-4 border-dashed border-purple-500 bg-purple-500/10 rounded-xl"
+                          style={{
+                            left: ocrBox.x,
+                            top: ocrBox.y,
+                            width: ocrBox.width,
+                            height: ocrBox.height,
+                          }}
+                        >
+                          {/* Resize Handle */}
+                          <div 
+                            className="absolute -right-2 -bottom-2 w-6 h-6 bg-purple-600 rounded-full cursor-nwse-resize shadow-lg flex items-center justify-center"
+                            onMouseDown={(e) => {
+                              e.stopPropagation();
+                              const startX = e.clientX;
+                              const startY = e.clientY;
+                              const startW = ocrBox.width;
+                              const startH = ocrBox.height;
+                              
+                              const onMouseMove = (moveEvent: MouseEvent) => {
+                                setOcrBox(prev => ({
+                                  ...prev,
+                                  width: Math.max(50, startW + (moveEvent.clientX - startX)),
+                                  height: Math.max(50, startH + (moveEvent.clientY - startY))
+                                }));
+                              };
+                              
+                              const onMouseUp = () => {
+                                window.removeEventListener('mousemove', onMouseMove);
+                                window.removeEventListener('mouseup', onMouseUp);
+                              };
+                              
+                              window.addEventListener('mousemove', onMouseMove);
+                              window.addEventListener('mouseup', onMouseUp);
+                            }}
+                          >
+                            <div className="w-2 h-2 bg-white rounded-full" />
+                          </div>
+
+                          {/* Drag Handle */}
+                          <div 
+                            className="absolute inset-0 cursor-move"
+                            onMouseDown={(e) => {
+                              const startX = e.clientX;
+                              const startY = e.clientY;
+                              const startPosX = ocrBox.x;
+                              const startPosY = ocrBox.y;
+                              
+                              const onMouseMove = (moveEvent: MouseEvent) => {
+                                setOcrBox(prev => ({
+                                  ...prev,
+                                  x: startPosX + (moveEvent.clientX - startX),
+                                  y: startPosY + (moveEvent.clientY - startY)
+                                }));
+                              };
+                              
+                              const onMouseUp = () => {
+                                window.removeEventListener('mousemove', onMouseMove);
+                                window.removeEventListener('mouseup', onMouseUp);
+                              };
+                              
+                              window.addEventListener('mousemove', onMouseMove);
+                              window.addEventListener('mouseup', onMouseUp);
+                            }}
+                          />
+
+                          {/* Action Buttons */}
+                          <div className="absolute -top-12 left-1/2 -translate-x-1/2 flex gap-2 bg-white p-2 rounded-2xl shadow-xl border border-purple-100">
+                            <button
+                              onClick={performOCR}
+                              disabled={isOCRProcessing}
+                              className="bg-purple-600 text-white px-4 py-1 rounded-xl font-bold flex items-center gap-2 hover:bg-purple-700 disabled:opacity-50 whitespace-nowrap"
+                            >
+                              {isOCRProcessing ? (
+                                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                              ) : (
+                                <Sparkles size={16} />
+                              )}
+                              تحويل لنص
+                            </button>
+                            <button
+                              onClick={() => setIsOCRSelectorActive(false)}
+                              className="bg-gray-100 text-gray-600 px-3 py-1 rounded-xl font-bold hover:bg-gray-200"
+                            >
+                              إغلاق
+                            </button>
+                          </div>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+
+                    {/* Handwriting Converter Panel */}
+                    <AnimatePresence>
+                      {isHandwritingPanelOpen && (
+                        <motion.div
+                          initial={{ opacity: 0, x: 100 }}
+                          animate={{ opacity: 1, x: 0 }}
+                          exit={{ opacity: 0, x: 100 }}
+                          drag
+                          dragMomentum={false}
+                          className="absolute top-10 right-10 z-50 bg-white rounded-3xl shadow-2xl border border-purple-100 p-6 w-80 cursor-move"
+                        >
+                          <div className="flex items-center justify-between mb-4">
+                            <h3 className="font-bold text-purple-600 flex items-center gap-2">
+                              <Languages size={18} />
+                              محول الخط الأنيق
+                            </h3>
+                            <button 
+                              onClick={() => setIsHandwritingPanelOpen(false)}
+                              className="text-gray-400 hover:text-red-500"
+                            >
+                              <Trash2 size={16} />
+                            </button>
+                          </div>
+                          
+                          <div className="space-y-4">
+                            <textarea
+                              value={handwritingText}
+                              onChange={(e) => setHandwritingText(e.target.value)}
+                              placeholder="اكتب النص هنا ليتحول لخط جميل..."
+                              className="w-full h-32 p-4 bg-purple-50 rounded-2xl border-none outline-none focus:ring-2 ring-purple-200 text-right font-bold resize-none"
+                              style={{ fontFamily: handwritingFont }}
+                              dir="rtl"
+                            />
+                            
+                            <div className="grid grid-cols-2 gap-2">
+                              <button
+                                onClick={() => setHandwritingFont('Aref Ruqaa')}
+                                className={`py-2 rounded-xl text-xs font-bold transition-all ${handwritingFont === 'Aref Ruqaa' ? 'bg-purple-600 text-white' : 'bg-gray-100 text-gray-500'}`}
+                              >
+                                خط الرقعة
+                              </button>
+                              <button
+                                onClick={() => setHandwritingFont('Amiri')}
+                                className={`py-2 rounded-xl text-xs font-bold transition-all ${handwritingFont === 'Amiri' ? 'bg-purple-600 text-white' : 'bg-gray-100 text-gray-500'}`}
+                              >
+                                خط أميري
+                              </button>
+                              <button
+                                onClick={() => setHandwritingFont('Reem Kufi')}
+                                className={`py-2 rounded-xl text-xs font-bold transition-all ${handwritingFont === 'Reem Kufi' ? 'bg-purple-600 text-white' : 'bg-gray-100 text-gray-500'}`}
+                              >
+                                خط كوفي
+                              </button>
+                              <button
+                                onClick={() => setHandwritingFont('Vibes')}
+                                className={`py-2 rounded-xl text-xs font-bold transition-all ${handwritingFont === 'Vibes' ? 'bg-purple-600 text-white' : 'bg-gray-100 text-gray-500'}`}
+                              >
+                                خط يد
+                              </button>
+                              <button
+                                onClick={() => setHandwritingFont('Marhey')}
+                                className={`py-2 rounded-xl text-xs font-bold transition-all ${handwritingFont === 'Marhey' ? 'bg-purple-600 text-white' : 'bg-gray-100 text-gray-500'}`}
+                              >
+                                خط يد 1
+                              </button>
+                              <button
+                                onClick={() => setHandwritingFont('Lemonada')}
+                                className={`py-2 rounded-xl text-xs font-bold transition-all ${handwritingFont === 'Lemonada' ? 'bg-purple-600 text-white' : 'bg-gray-100 text-gray-500'}`}
+                              >
+                                خط يد 2
+                              </button>
+                              <button
+                                onClick={() => setHandwritingFont('Katibeh')}
+                                className={`py-2 rounded-xl text-xs font-bold transition-all ${handwritingFont === 'Katibeh' ? 'bg-purple-600 text-white' : 'bg-gray-100 text-gray-500'}`}
+                              >
+                                خط يد 3
+                              </button>
+                            </div>
+
+                            <button
+                              onClick={addHandwritingToBoard}
+                              disabled={!handwritingText.trim()}
+                              className="w-full py-3 bg-purple-600 text-white rounded-2xl font-bold shadow-lg hover:bg-purple-700 disabled:opacity-50 transition-all flex items-center justify-center gap-2"
+                            >
+                              <Plus size={18} />
+                              إضافة للسبورة
+                            </button>
+                          </div>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
                   </div>
+                </div>
+              )}
+
+              {activeTab === 'question-types' && (
+                <div className="max-w-6xl mx-auto space-y-8">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-2xl font-bold text-gray-800">أنواع الأسئلة الذكية</h3>
+                    <div className="flex gap-4">
+                      <div className="flex gap-2 bg-white p-1 rounded-xl shadow-sm border border-gray-100">
+                        {(['beginner', 'intermediate', 'advanced'] as const).map((l) => (
+                          <button
+                            key={l}
+                            onClick={() => setQuestionLevel(l)}
+                            className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${questionLevel === l ? 'bg-emerald-600 text-white' : 'text-gray-500 hover:bg-gray-50'}`}
+                          >
+                            {l === 'beginner' ? 'مبتدئ' : l === 'intermediate' ? 'متوسط' : 'متقدم'}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+                    {[
+                      { id: 'match', name: 'مطابقة', icon: <Layout size={24} /> },
+                      { id: 'connect', name: 'توصيل', icon: <LinkIcon size={24} /> },
+                      { id: 'mcq', name: 'الاختيار من متعدد', icon: <HelpCircle size={24} /> },
+                      { id: 'true-false', name: 'صح وخطأ', icon: <CheckCircle size={24} /> },
+                      { id: 'vocab', name: 'الحصيلة اللغوية', icon: <BookOpen size={24} /> },
+                      { id: 'grammar', name: 'السلامة اللغوية', icon: <Sparkles size={24} /> },
+                      { id: 'missing-letter', name: 'إكمال الحرف الناقص', icon: <Plus size={24} /> },
+                      { id: 'correct-answer', name: 'اختيار الإجابة الصحيحة', icon: <Check size={24} /> },
+                      { id: 'dictation', name: 'أكتب ما يملى عليك', icon: <Pen size={24} /> },
+                      { id: 'explain-why', name: 'علل', icon: <HelpCircle size={24} /> },
+                      { id: 'arrange', name: 'رتب', icon: <Rows size={24} /> },
+                      { id: 'answer', name: 'أجب', icon: <Send size={24} /> },
+                      { id: 'shade', name: 'ظلل', icon: <Pen size={24} /> },
+                      { id: 'choose', name: 'اختر', icon: <MousePointer2 size={24} /> },
+                      { id: 'circle', name: 'حوط', icon: <CircleIcon size={24} /> },
+                      { id: 'underline', name: 'ضع خطاً', icon: <Pen size={24} /> },
+                      { id: 'complete', name: 'أكمل', icon: <Layout size={24} /> },
+                      { id: 'clarify', name: 'بين', icon: <HelpCircle size={24} /> },
+                      { id: 'speak', name: 'تحدث', icon: <Video size={24} /> },
+                      { id: 'express', name: 'عبر', icon: <Smile size={24} /> },
+                    ].map((type) => (
+                      <motion.button
+                        whileHover={{ scale: 1.05 }}
+                        whileTap={{ scale: 0.95 }}
+                        key={type.id}
+                        onClick={() => setSelectedQuestionType(type.id)}
+                        className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm hover:shadow-xl hover:border-emerald-200 transition-all flex flex-col items-center gap-4 text-center group"
+                      >
+                        <div className="bg-emerald-50 text-emerald-600 p-4 rounded-2xl group-hover:bg-emerald-600 group-hover:text-white transition-all">
+                          {type.icon}
+                        </div>
+                        <span className="font-bold text-gray-800">{type.name}</span>
+                      </motion.button>
+                    ))}
+                  </div>
+
+                  {/* AI Generation Modal */}
+                  <AnimatePresence>
+                    {selectedQuestionType && (
+                      <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+                        <motion.div
+                          initial={{ opacity: 0, scale: 0.9 }}
+                          animate={{ opacity: 1, scale: 1 }}
+                          exit={{ opacity: 0, scale: 0.9 }}
+                          className="bg-white rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden"
+                        >
+                          <div className="p-6 border-b border-gray-100 flex items-center justify-between bg-emerald-50">
+                            <h4 className="text-xl font-bold text-emerald-800 flex items-center gap-2">
+                              <Sparkles size={20} />
+                              توليد سؤال بالذكاء الاصطناعي
+                            </h4>
+                            <button onClick={() => setSelectedQuestionType(null)} className="text-gray-400 hover:text-red-500">
+                              <XCircle size={24} />
+                            </button>
+                          </div>
+                          <div className="p-8 space-y-6">
+                            <div className="space-y-2">
+                              <label className="text-sm font-bold text-gray-600">موضوع السؤال أو النص التعليمي</label>
+                              <textarea
+                                value={aiPrompt}
+                                onChange={(e) => setAiPrompt(e.target.value)}
+                                placeholder="مثال: درس الفاعل، أو نص عن فصل الربيع..."
+                                className="w-full h-32 p-4 bg-gray-50 rounded-2xl border-none outline-none focus:ring-2 ring-emerald-200 text-right font-bold resize-none"
+                                dir="rtl"
+                              />
+                            </div>
+                            <button
+                              onClick={async () => {
+                                setIsGeneratingQuestion(true);
+                                try {
+                                  const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+                                  const typeName = [
+                                    { id: 'match', name: 'مطابقة' },
+                                    { id: 'connect', name: 'توصيل' },
+                                    { id: 'mcq', name: 'الاختيار من متعدد' },
+                                    { id: 'true-false', name: 'صح وخطأ' },
+                                    { id: 'vocab', name: 'الحصيلة اللغوية' },
+                                    { id: 'grammar', name: 'السلامة اللغوية' },
+                                    { id: 'missing-letter', name: 'إكمال الحرف الناقص' },
+                                    { id: 'correct-answer', name: 'اختيار الإجابة الصحيحة' },
+                                    { id: 'dictation', name: 'أكتب ما يملى عليك' },
+                                    { id: 'explain-why', name: 'علل' },
+                                    { id: 'arrange', name: 'رتب' },
+                                    { id: 'answer', name: 'أجب' },
+                                    { id: 'shade', name: 'ظلل' },
+                                    { id: 'choose', name: 'اختر' },
+                                    { id: 'circle', name: 'حوط' },
+                                    { id: 'underline', name: 'ضع خطاً' },
+                                    { id: 'complete', name: 'أكمل' },
+                                    { id: 'clarify', name: 'بين' },
+                                    { id: 'speak', name: 'تحدث' },
+                                    { id: 'express', name: 'عبر' },
+                                    { id: 'analysis', name: 'تحليل الكلمات' },
+                                    { id: 'formation', name: 'تكوين الكلمات' },
+                                    { id: 'meanings', name: 'معاني الكلمات' },
+                                    { id: 'plurals', name: 'الجموع' },
+                                    { id: 'demonstratives', name: 'هذا وهذه' },
+                                    { id: 'adverbs', name: 'هنا وهناك' },
+                                    { id: 'comparison', name: 'أكبر وأصغر' },
+                                  ].find(t => t.id === selectedQuestionType)?.name;
+
+                                  const response = await ai.models.generateContent({
+                                    model: "gemini-3-flash-preview",
+                                    contents: [{
+                                      parts: [{
+                                        text: `قم بتوليد سؤال تعليمي احترافي من نوع "${typeName}" حول الموضوع التالي: "${aiPrompt}". 
+                                        المستوى: ${questionLevel}.
+                                        المهارات المطلوبة: مطابقة، توصيل، اختيار من متعدد، صح وخطأ، حصيلة لغوية، سلامة لغوية، إكمال حرف، إملاء، تعليل، ترتيب، تحليل كلمات، تكوين كلمات، معاني، جموع، أسماء إشارة، ظرف مكان، مقارنة (أكبر/أصغر).
+
+                                        يجب أن يكون الرد بتنسيق JSON فقط كالتالي:
+                                        {
+                                          "text": "نص السؤال هنا",
+                                          "skill": "${typeName}",
+                                          "options": ["خيار 1", "خيار 2", "خيار 3", "خيار 4"], 
+                                          "correctAnswer": "الإجابة الصحيحة هنا",
+                                          "type": "${
+                                            ['mcq', 'choose', 'correct-answer', 'shade', 'circle', 'underline', 'vocab', 'grammar', 'meanings', 'plurals', 'demonstratives', 'adverbs'].includes(selectedQuestionType) ? 'mcq' : 
+                                            ['true-false'].includes(selectedQuestionType) ? 'tf' : 
+                                            ['match', 'connect'].includes(selectedQuestionType) ? 'match' : 
+                                            ['missing-letter', 'complete'].includes(selectedQuestionType) ? 'fill' : 
+                                            ['arrange'].includes(selectedQuestionType) ? 'arrange' :
+                                            ['analysis'].includes(selectedQuestionType) ? 'analysis' :
+                                            ['formation'].includes(selectedQuestionType) ? 'formation' :
+                                            ['comparison'].includes(selectedQuestionType) ? 'math' :
+                                            'open'
+                                          }",
+                                          "word": "الكلمة", 
+                                          "blankIndex": 2,
+                                          "matchPairs": [{ "image": "وصف", "letter": "حرف" }],
+                                          "items": ["عنصر 1", "عنصر 2"], // للترتيب
+                                          "syllables": ["مق 1", "مق 2"] // للتحليل/التكوين
+                                        }`
+                                      }]
+                                    }],
+                                    config: { responseMimeType: "application/json" }
+                                  });
+
+                                  const generated = JSON.parse(response.text);
+                                  const newQ: Question = {
+                                    id: Math.random().toString(36).substring(7),
+                                    text: generated.text,
+                                    skill: generated.skill,
+                                    options: generated.options,
+                                    correctAnswer: generated.correctAnswer,
+                                    type: generated.type,
+                                    level: questionLevel,
+                                    word: generated.word,
+                                    blankIndex: generated.blankIndex,
+                                    matchPairs: generated.matchPairs,
+                                    items: generated.items,
+                                    syllables: generated.syllables
+                                  };
+                                  sendQuestion(newQ);
+                                  setSelectedQuestionType(null);
+                                  setAiPrompt('');
+                                } catch (error) {
+                                  console.error("AI Generation Error:", error);
+                                } finally {
+                                  setIsGeneratingQuestion(false);
+                                }
+                              }}
+                              disabled={isGeneratingQuestion || !aiPrompt.trim()}
+                              className="w-full py-4 bg-emerald-600 text-white rounded-2xl font-bold shadow-lg hover:bg-emerald-700 disabled:opacity-50 transition-all flex items-center justify-center gap-2"
+                            >
+                              {isGeneratingQuestion ? (
+                                <div className="w-6 h-6 border-4 border-white border-t-transparent rounded-full animate-spin" />
+                              ) : (
+                                <>
+                                  <Sparkles size={20} />
+                                  توليد وإرسال للطلاب
+                                </>
+                              )}
+                            </button>
+                          </div>
+                        </motion.div>
+                      </div>
+                    )}
+                  </AnimatePresence>
                 </div>
               )}
 
@@ -1167,6 +1774,15 @@ export default function App() {
                   <div className="flex items-center justify-between">
                     <h3 className="text-2xl font-bold text-gray-800">بنك الأسئلة التفاعلي</h3>
                     <div className="flex gap-4">
+                      {receivedQuestion && (
+                        <button 
+                          onClick={stopQuestion}
+                          className="bg-red-600 text-white px-6 py-2 rounded-xl font-bold shadow-lg shadow-red-100 flex items-center gap-2 hover:bg-red-700 transition-all"
+                        >
+                          <XCircle size={18} />
+                          إيقاف السؤال الحالي
+                        </button>
+                      )}
                       <label className="bg-emerald-600 text-white px-6 py-2 rounded-xl font-bold shadow-lg shadow-emerald-100 flex items-center gap-2 cursor-pointer hover:bg-emerald-700 transition-all">
                         <BookOpen size={18} />
                         إرسال قصاصة كتاب
@@ -1422,6 +2038,48 @@ export default function App() {
                           <p className="text-sm text-gray-500">صل الكلمة بالصورة المناسبة</p>
                         </div>
                       </motion.button>
+
+                      <motion.button
+                        whileHover={{ scale: 1.02 }}
+                        onClick={startQuizRaceGame}
+                        className="bg-white p-6 rounded-[2rem] shadow-xl border-b-8 border-indigo-500 text-right flex flex-col gap-4"
+                      >
+                        <div className="bg-indigo-100 w-12 h-12 rounded-2xl flex items-center justify-center">
+                          <Rocket className="text-indigo-600 w-6 h-6" />
+                        </div>
+                        <div>
+                          <h4 className="text-xl font-black text-gray-900">سباق الأسئلة</h4>
+                          <p className="text-sm text-gray-500">أجب بسرعة لتفوز بالسباق</p>
+                        </div>
+                      </motion.button>
+
+                      <motion.button
+                        whileHover={{ scale: 1.02 }}
+                        onClick={startWordSearchGame}
+                        className="bg-white p-6 rounded-[2rem] shadow-xl border-b-8 border-amber-500 text-right flex flex-col gap-4"
+                      >
+                        <div className="bg-amber-100 w-12 h-12 rounded-2xl flex items-center justify-center">
+                          <Search className="text-amber-600 w-6 h-6" />
+                        </div>
+                        <div>
+                          <h4 className="text-xl font-black text-gray-900">صائد الكلمات</h4>
+                          <p className="text-sm text-gray-500">ابحث عن الكلمات المخفية</p>
+                        </div>
+                      </motion.button>
+
+                      <motion.button
+                        whileHover={{ scale: 1.02 }}
+                        onClick={startMemoryGame}
+                        className="bg-white p-6 rounded-[2rem] shadow-xl border-b-8 border-rose-500 text-right flex flex-col gap-4"
+                      >
+                        <div className="bg-rose-100 w-12 h-12 rounded-2xl flex items-center justify-center">
+                          <Brain className="text-rose-600 w-6 h-6" />
+                        </div>
+                        <div>
+                          <h4 className="text-xl font-black text-gray-900">لعبة الذاكرة</h4>
+                          <p className="text-sm text-gray-500">طابق البطاقات المتشابهة</p>
+                        </div>
+                      </motion.button>
                     </div>
                   ) : (
                     <div className="w-full">
@@ -1453,12 +2111,33 @@ export default function App() {
                           level={gameState.level}
                           scores={gameState.scores}
                         />
-                      ) : (
+                      ) : gameState.type === 'matching' ? (
                         <MatchingGame
                           role="teacher"
                           data={gameState.data}
                           level={gameState.level}
                           scores={gameState.scores}
+                        />
+                      ) : gameState.type === 'quiz-race' ? (
+                        <QuizRaceGame
+                          role="teacher"
+                          questions={gameState.data.questions}
+                          level={gameState.level}
+                          scores={gameState.scores}
+                        />
+                      ) : gameState.type === 'word-search' ? (
+                        <WordSearchGame
+                          role="teacher"
+                          data={gameState.data}
+                          level={gameState.level}
+                          scores={gameState.scores}
+                        />
+                      ) : (
+                        <MemoryGame
+                          isTeacher={true}
+                          data={gameState.data}
+                          leaderboard={gameState.scores}
+                          onGameOver={() => {}}
                         />
                       )}
                     </div>
@@ -1543,12 +2222,31 @@ export default function App() {
                       level={gameState.level}
                       onScoreUpdate={(score) => socket.emit('update-score', { code: sessionCode, score })}
                     />
-                  ) : (
+                  ) : gameState.type === 'matching' ? (
                     <MatchingGame
                       role="student"
                       data={gameState.data}
                       level={gameState.level}
                       onScoreUpdate={(score) => socket.emit('update-score', { code: sessionCode, score })}
+                    />
+                  ) : gameState.type === 'quiz-race' ? (
+                    <QuizRaceGame
+                      role="student"
+                      questions={gameState.data.questions}
+                      level={gameState.level}
+                      onScoreUpdate={(score) => socket.emit('update-score', { code: sessionCode, score })}
+                    />
+                  ) : gameState.type === 'word-search' ? (
+                    <WordSearchGame
+                      role="student"
+                      data={gameState.data}
+                      level={gameState.level}
+                      onScoreUpdate={(score) => socket.emit('update-score', { score })}
+                    />
+                  ) : (
+                    <MemoryGame
+                      data={gameState.data}
+                      onGameOver={(score) => socket.emit('update-score', { code: sessionCode, score })}
                     />
                   )}
                 </div>
@@ -1585,6 +2283,19 @@ export default function App() {
                       </motion.div>
                     )}
                   </AnimatePresence>
+                  {isLocked && (
+                    <div className="absolute inset-0 z-50 bg-black/5 backdrop-blur-[1px] flex items-center justify-center pointer-events-none">
+                      <div className="bg-white/90 px-8 py-4 rounded-3xl shadow-2xl flex items-center gap-4 border border-gray-200">
+                        <div className="bg-red-100 p-2 rounded-full">
+                          <Lock className="text-red-500" size={24} />
+                        </div>
+                        <div>
+                          <span className="font-bold text-gray-800 block text-lg">الشاشة مقفولة</span>
+                          <span className="text-sm text-gray-500">تابع شرح المعلم الآن</span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
                   <div className="flex items-center gap-3 mb-6">
                     <div className="bg-emerald-100 text-emerald-600 p-3 rounded-2xl">
                       <HelpCircle size={28} />
@@ -1621,7 +2332,7 @@ export default function App() {
                         tool={tool}
                         color={color}
                         brushSize={brushSize}
-                        isReadOnly={false}
+                        isReadOnly={isLocked}
                       />
                     </div>
                   )}
@@ -1676,6 +2387,41 @@ export default function App() {
                           </div>
                         </button>
                       ))}
+                    </div>
+                  )}
+
+                  {receivedQuestion.type === 'tf' && (
+                    <div className="mt-6 grid grid-cols-2 gap-6">
+                      <button
+                        onClick={() => setStudentAnswer('صح')}
+                        className={`p-8 rounded-[2rem] border-4 transition-all flex flex-col items-center gap-4 ${studentAnswer === 'صح' ? 'bg-emerald-50 border-emerald-500 text-emerald-700 shadow-xl' : 'bg-white border-gray-100 hover:border-emerald-200'}`}
+                      >
+                        <div className={`w-16 h-16 rounded-full flex items-center justify-center ${studentAnswer === 'صح' ? 'bg-emerald-500 text-white' : 'bg-emerald-100 text-emerald-600'}`}>
+                          <CheckCircle size={32} />
+                        </div>
+                        <span className="font-black text-2xl">صح</span>
+                      </button>
+                      <button
+                        onClick={() => setStudentAnswer('خطأ')}
+                        className={`p-8 rounded-[2rem] border-4 transition-all flex flex-col items-center gap-4 ${studentAnswer === 'خطأ' ? 'bg-red-50 border-red-500 text-red-700 shadow-xl' : 'bg-white border-gray-100 hover:border-red-200'}`}
+                      >
+                        <div className={`w-16 h-16 rounded-full flex items-center justify-center ${studentAnswer === 'خطأ' ? 'bg-red-500 text-white' : 'bg-red-100 text-red-600'}`}>
+                          <XCircle size={32} />
+                        </div>
+                        <span className="font-black text-2xl">خطأ</span>
+                      </button>
+                    </div>
+                  )}
+
+                  {receivedQuestion.type === 'open' && (
+                    <div className="mt-6">
+                      <textarea
+                        value={studentAnswer || ''}
+                        onChange={(e) => setStudentAnswer(e.target.value)}
+                        placeholder="اكتب إجابتك هنا..."
+                        className="w-full h-48 p-6 bg-gray-50 rounded-[2rem] border-none outline-none focus:ring-4 ring-emerald-100 text-right font-bold text-xl resize-none shadow-inner"
+                        dir="rtl"
+                      />
                     </div>
                   )}
 

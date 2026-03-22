@@ -22,12 +22,14 @@ export const TrainGame: React.FC<TrainGameProps> = ({
 }) => {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [score, setScore] = useState(0);
-  const [timeLeft, setTimeLeft] = useState(level === 'easy' ? 120 : level === 'medium' ? 90 : 60);
+  const [stage, setStage] = useState(1);
+  const [timeLeft, setTimeLeft] = useState(level === 'easy' ? 180 : level === 'medium' ? 120 : 90);
   const [isGameOver, setIsGameOver] = useState(false);
+  const [isStageTransition, setIsStageTransition] = useState(false);
   const [feedback, setFeedback] = useState<'correct' | 'wrong' | null>(null);
 
   useEffect(() => {
-    if (role === 'student' && !isGameOver) {
+    if (role === 'student' && !isGameOver && !isStageTransition) {
       const interval = setInterval(() => {
         setTimeLeft((prev) => {
           if (prev <= 1) {
@@ -41,15 +43,16 @@ export const TrainGame: React.FC<TrainGameProps> = ({
       }, 1000);
       return () => clearInterval(interval);
     }
-  }, [role, isGameOver, onGameOver]);
+  }, [role, isGameOver, isStageTransition, onGameOver]);
 
   const handleChoice = (madType: string) => {
-    if (isGameOver || feedback) return;
+    if (isGameOver || feedback || isStageTransition) return;
 
     const currentWord = data.words[currentIndex];
     if (currentWord.type === madType) {
-      setScore(s => s + 20);
-      onScoreUpdate?.(score + 20);
+      const points = 25 * stage;
+      setScore(s => s + points);
+      onScoreUpdate?.(score + points);
       setFeedback('correct');
       confetti({ particleCount: 40, spread: 60 });
     } else {
@@ -61,10 +64,29 @@ export const TrainGame: React.FC<TrainGameProps> = ({
       if (currentIndex < data.words.length - 1) {
         setCurrentIndex(i => i + 1);
       } else {
-        setIsGameOver(true);
-        onGameOver?.();
+        if (stage < 3) {
+          handleNextStage();
+        } else {
+          setIsGameOver(true);
+          onGameOver?.();
+        }
       }
     }, 1000);
+  };
+
+  const handleNextStage = () => {
+    setIsStageTransition(true);
+    confetti({
+      particleCount: 100,
+      spread: 70,
+      origin: { y: 0.6 }
+    });
+    setTimeout(() => {
+      setStage(prev => prev + 1);
+      setCurrentIndex(0);
+      setTimeLeft(prev => prev + 60);
+      setIsStageTransition(false);
+    }, 3000);
   };
 
   if (role === 'teacher') {
@@ -106,6 +128,7 @@ export const TrainGame: React.FC<TrainGameProps> = ({
     <div className="bg-sky-50 p-8 rounded-[3rem] shadow-2xl max-w-4xl mx-auto text-center relative overflow-hidden min-h-[600px] flex flex-col">
       <div className="flex justify-between items-center mb-8">
         <div className="bg-white/80 backdrop-blur-sm px-6 py-2 rounded-2xl text-emerald-600 font-black text-xl shadow-sm">النقاط: {score}</div>
+        <div className="bg-yellow-50 px-6 py-2 rounded-2xl text-yellow-600 font-black text-xl shadow-sm">المرحلة: {stage}</div>
         <div className="bg-white/80 backdrop-blur-sm px-6 py-2 rounded-2xl text-blue-600 font-black text-xl shadow-sm">الوقت: {timeLeft}s</div>
       </div>
 
@@ -170,6 +193,21 @@ export const TrainGame: React.FC<TrainGameProps> = ({
           )}
         </motion.div>
       )}
+
+      <AnimatePresence>
+        {isStageTransition && (
+          <motion.div
+            initial={{ x: 500 }}
+            animate={{ x: 0 }}
+            exit={{ x: -500 }}
+            className="absolute inset-0 z-30 flex flex-col items-center justify-center bg-emerald-600 text-white"
+          >
+            <TrainFront size={120} className="mb-6 animate-bounce" />
+            <h2 className="text-6xl font-black mb-2">رائع!</h2>
+            <p className="text-2xl">القطار ينتقل للمرحلة {stage + 1}</p>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {isGameOver && (
         <div className="absolute inset-0 bg-white z-20 flex flex-col items-center justify-center p-8">
