@@ -26,6 +26,7 @@ import { MatchingGame } from './components/MatchingGame';
 import { QuizRaceGame } from './components/QuizRaceGame';
 import { WordSearchGame } from './components/WordSearchGame';
 import { MemoryGame } from './components/MemoryGame';
+import { StudentGradesDrawer } from './components/StudentGradesDrawer';
 import { AssignmentManager } from './components/AssignmentManager';
 import { AssignmentStudentView } from './components/AssignmentStudentView';
 import { Tool, LineData, ImageData, TextData, ShapeData, Question, StudentAnswer, GameState, Assignment, Submission } from './types';
@@ -1035,6 +1036,7 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-[#F8F9FA] flex flex-col font-sans pb-12" dir="rtl">
+      {role === 'teacher' && <StudentGradesDrawer />}
       {/* Header */}
       <header className="bg-white border-b border-gray-200 px-6 py-3 flex items-center justify-between shadow-sm sticky top-0 z-50">
         <div className="flex items-center gap-4">
