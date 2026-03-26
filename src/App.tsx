@@ -12,12 +12,18 @@ import {
   Sparkles, Trash2, ChevronRight, ChevronLeft,
   TrainFront, BookOpen, Link as LinkIcon,
   Square, Circle as CircleIcon, Triangle, Ruler,
-  Video, Maximize2, Rows, Maximize, Minimize, Check, X, Star, Smile, Frown, Languages, Scan, Rocket, Search, Brain
+  Video, Maximize2, Rows, Maximize, Minimize, Check, X, Star, Smile, Frown, Languages, Scan, Rocket, Search, Brain, GraduationCap, ArrowLeft, Trophy, Quote, Wand2, Volume2
 } from 'lucide-react';
-import { GoogleGenAI } from "@google/genai";
+import { GoogleGenAI, Modality } from "@google/genai";
 import { motion, AnimatePresence } from 'motion/react';
 import { Board } from './components/Board';
-import { ResourceLibrary } from './components/ResourceLibrary';
+import { ServiceCorner } from './components/ServiceCorner';
+import { Navbar } from './components/landing/Navbar';
+import { Services } from './components/landing/Services';
+import { AboutUs } from './components/landing/AboutUs';
+import { StartPath } from './components/landing/StartPath';
+import { Testimonials } from './components/landing/Testimonials';
+import { Contact } from './components/landing/Contact';
 import { BalloonsGame } from './components/BalloonsGame';
 import { SortingGame } from './components/SortingGame';
 import { TrainGame } from './components/TrainGame';
@@ -29,6 +35,7 @@ import { MemoryGame } from './components/MemoryGame';
 import { StudentGradesDrawer } from './components/StudentGradesDrawer';
 import { AssignmentManager } from './components/AssignmentManager';
 import { AssignmentStudentView } from './components/AssignmentStudentView';
+import { RegistrationForm } from './components/RegistrationForm';
 import { Tool, LineData, ImageData, TextData, ShapeData, Question, StudentAnswer, GameState, Assignment, Submission } from './types';
 import { correctFillInTheBlank } from './services/geminiService';
 import confetti from 'canvas-confetti';
@@ -43,7 +50,26 @@ const getArabicClusters = (word: string) => {
 import { ARABIC_QUESTION_BANK } from './constants/questionBank';
 
 export default function App() {
-  const [role, setRole] = useState<'teacher' | 'student' | null>(null);
+  const [currentPage, setCurrentPage] = useState<'home' | 'board'>(() => {
+    const saved = localStorage.getItem('currentPage');
+    return (saved as 'home' | 'board') || 'home';
+  });
+  const [role, setRole] = useState<'teacher' | 'student' | null>(() => {
+    const saved = localStorage.getItem('userRole');
+    return (saved as 'teacher' | 'student') || null;
+  });
+
+  useEffect(() => {
+    localStorage.setItem('currentPage', currentPage);
+  }, [currentPage]);
+
+  useEffect(() => {
+    if (role) {
+      localStorage.setItem('userRole', role);
+    } else {
+      localStorage.removeItem('userRole');
+    }
+  }, [role]);
   const [sessionCode, setSessionCode] = useState('');
   const [studentName, setStudentName] = useState('');
   const [isJoined, setIsJoined] = useState(false);
@@ -92,7 +118,104 @@ export default function App() {
   const [isOCRSelectorActive, setIsOCRSelectorActive] = useState(false);
   const [ocrBox, setOcrBox] = useState({ x: 100, y: 100, width: 300, height: 150 });
   const [isOCRProcessing, setIsOCRProcessing] = useState(false);
+  const [isRegistrationOpen, setIsRegistrationOpen] = useState(false);
+  const [registrationInitialRole, setRegistrationInitialRole] = useState<'teacher' | 'student' | null>(null);
+  const audioContextRef = useRef<AudioContext | null>(null);
+
+  const openRegistration = (initialRole: 'teacher' | 'student' | null = null) => {
+    setRegistrationInitialRole(initialRole);
+    setIsRegistrationOpen(true);
+  };
   const stageRef = useRef<any>(null);
+
+  const readText = async (text: string) => {
+    if (!text || text.length > 500) return;
+    
+    try {
+      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+      const response = await ai.models.generateContent({
+        model: "gemini-2.5-flash-preview-tts",
+        contents: [{ parts: [{ text }] }],
+        config: {
+          responseModalities: [Modality.AUDIO],
+          speechConfig: {
+            voiceConfig: {
+              // 'Fenrir' is a deep, mature male voice
+              prebuiltVoiceConfig: { voiceName: 'Fenrir' },
+            },
+          },
+        },
+      });
+
+      const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+      if (base64Audio) {
+        if (!audioContextRef.current) {
+          audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
+        }
+        
+        if (audioContextRef.current.state === 'suspended') {
+          await audioContextRef.current.resume();
+        }
+
+        const audioData = Uint8Array.from(atob(base64Audio), c => c.charCodeAt(0)).buffer;
+        const audioBuffer = await audioContextRef.current.decodeAudioData(audioData);
+        const source = audioContextRef.current.createBufferSource();
+        source.buffer = audioBuffer;
+        source.connect(audioContextRef.current.destination);
+        source.start();
+      }
+    } catch (error) {
+      console.error('TTS Error:', error);
+    }
+  };
+
+  useEffect(() => {
+    const handleGlobalClick = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      
+      // Prevent reading when clicking buttons/inputs/nav
+      if (target.closest('button') || target.closest('input') || target.closest('select') || target.closest('nav') || target.closest('header')) {
+        return;
+      }
+
+      // Handle Board Canvas
+      if (target.tagName.toLowerCase() === 'canvas' && currentPage === 'board') {
+        const rect = target.getBoundingClientRect();
+        const x = e.clientX - rect.left;
+        const y = e.clientY - rect.top;
+        
+        // Find if any board text was clicked
+        const clickedText = texts.find(t => {
+          const fontSize = 24;
+          const charWidth = fontSize * 0.6;
+          const width = t.text.length * charWidth;
+          const height = fontSize * 1.5;
+          return x >= t.x - 10 && x <= t.x + width + 10 && y >= t.y - height && y <= t.y + 10;
+        });
+        
+        if (clickedText) {
+          readText(clickedText.text);
+          return;
+        }
+      }
+
+      // Handle regular DOM elements
+      const text = target.innerText?.trim() || target.textContent?.trim();
+      if (text && text.length > 0 && text.length < 200) {
+        readText(text);
+      }
+    };
+
+    window.addEventListener('click', handleGlobalClick);
+    return () => window.removeEventListener('click', handleGlobalClick);
+  }, [currentPage, texts]);
+
+  const scrollToSection = (sectionId: string) => {
+    const element = document.getElementById(sectionId);
+    if (element) {
+      element.scrollIntoView({ behavior: 'smooth' });
+    }
+  };
 
   useEffect(() => {
     const handleFullscreenChange = () => {
@@ -227,6 +350,12 @@ export default function App() {
       }
     }
   };
+
+  useEffect(() => {
+    if (currentPage === 'board' && role === 'teacher' && !sessionCode) {
+      handleCreateSession();
+    }
+  }, [currentPage, role, sessionCode]);
 
   useEffect(() => {
     socket.on('session-created', (code) => {
@@ -377,6 +506,7 @@ export default function App() {
   const handleJoinSession = () => {
     if (sessionCode && studentName) {
       setRole('student');
+      setCurrentPage('board');
       socket.emit('join-session', { code: sessionCode, name: studentName });
     }
   };
@@ -748,268 +878,401 @@ export default function App() {
     }
   };
 
-  if (!role) {
+  if (currentPage === 'home') {
     return (
-      <div className="min-h-screen bg-[#F8F9FA] font-sans" dir="rtl">
-        {/* Hero Section */}
-        <div className="relative overflow-hidden bg-emerald-900 text-white py-20 px-6">
-          <div className="absolute top-0 left-0 w-full h-full opacity-10 pointer-events-none">
-            <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-emerald-400 rounded-full blur-[120px]"></div>
-            <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-emerald-500 rounded-full blur-[120px]"></div>
-          </div>
-          
-          <div className="max-w-6xl mx-auto relative z-10 flex flex-col lg:flex-row items-center gap-12">
-            <div className="flex-1 text-center lg:text-right space-y-6">
-              <motion.div
-                initial={{ opacity: 0, x: 20 }}
-                animate={{ opacity: 1, x: 0 }}
-              >
-                <span className="inline-block px-4 py-1 rounded-full bg-emerald-800 text-emerald-300 text-sm font-bold mb-4">
-                  الجيل القادم من التعليم الذكي
-                </span>
-                <h1 className="text-5xl lg:text-7xl font-black leading-tight mb-6">
-                  حوّل حصتك إلى <span className="text-emerald-400">تجربة تفاعلية</span> لا تُنسى
-                </h1>
-                <p className="text-xl text-emerald-100/80 max-w-2xl">
-                  المنصة المتكاملة للمعلمين والطلاب: سبورة ذكية، ألعاب تعليمية، اختبارات فورية، وتصحيح آلي مدعوم بالذكاء الاصطناعي.
-                </p>
-              </motion.div>
-              
-              {/* Added Portrait Image */}
-              <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.2 }}
-                className="hidden lg:block relative w-64 h-80 rounded-[3rem] overflow-hidden border-4 border-emerald-500/30 shadow-2xl"
-              >
-                <img 
-                  src="https://images.unsplash.com/photo-1544717305-2782549b5136?auto=format&fit=crop&q=80&w=1000" 
-                  alt="Teacher Portrait" 
-                  className="w-full h-full object-cover"
-                  referrerPolicy="no-referrer"
-                />
-                <div className="absolute inset-0 bg-gradient-to-t from-emerald-900/60 to-transparent"></div>
-              </motion.div>
+      <div className="min-h-screen bg-white" dir="rtl">
+        <Navbar 
+          onNavigate={scrollToSection} 
+          onRegister={() => openRegistration(null)} 
+          onEnterBoard={() => {
+            if (role) {
+              setCurrentPage('board');
+            } else {
+              openRegistration(null);
+            }
+          }}
+        />
+        <main>
+          {/* Hero Section */}
+          <section id="hero" className="relative min-h-screen flex items-center justify-center overflow-hidden bg-white font-ibm">
+            {/* Background Decorative Elements */}
+            <div className="absolute inset-0 overflow-hidden pointer-events-none">
+              <div className="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] bg-blue-400/20 rounded-full blur-[120px] animate-pulse"></div>
+              <div className="absolute bottom-[-10%] right-[-10%] w-[50%] h-[50%] bg-purple-400/20 rounded-full blur-[120px] animate-pulse delay-700"></div>
+              <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full h-full bg-[radial-gradient(circle_at_center,rgba(59,130,246,0.05)_0%,transparent_70%)]"></div>
             </div>
 
-            <motion.div 
-              initial={{ opacity: 0, scale: 0.9 }}
-              animate={{ opacity: 1, scale: 1 }}
-              className="w-full max-w-md bg-white p-8 rounded-[2.5rem] shadow-2xl text-gray-900"
-            >
-              <div className="text-center mb-8">
-                <div className="bg-emerald-100 w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-4">
-                  <Sparkles className="text-emerald-600 w-8 h-8" />
-                </div>
-                <h2 className="text-2xl font-bold text-gray-900">ابدأ الآن مجاناً</h2>
-              </div>
-
-              <div className="space-y-4">
-                <button 
-                  onClick={handleCreateSession}
-                  className="w-full bg-emerald-600 hover:bg-emerald-700 text-white py-4 rounded-2xl font-bold transition-all flex items-center justify-center gap-2 shadow-lg shadow-emerald-200"
-                >
-                  <Plus size={20} />
-                  بدء حصة جديدة (معلم)
-                </button>
-                
-                <div className="relative py-4">
-                  <div className="absolute inset-0 flex items-center"><span className="w-full border-t border-gray-100"></span></div>
-                  <div className="relative flex justify-center text-xs uppercase"><span className="bg-white px-4 text-gray-400 font-bold">أو انضم كطالب</span></div>
-                </div>
-
-                <div className="space-y-3">
-                  <input 
-                    type="text" 
-                    placeholder="كود الحصة" 
-                    className="w-full px-4 py-4 rounded-2xl border-2 border-gray-100 focus:border-emerald-500 outline-none text-center font-mono text-2xl uppercase tracking-widest"
-                    value={sessionCode}
-                    onChange={(e) => setSessionCode(e.target.value.toUpperCase())}
-                  />
-                  <input 
-                    type="text" 
-                    placeholder="اسم الطالب" 
-                    className="w-full px-4 py-4 rounded-2xl border-2 border-gray-100 focus:border-emerald-500 outline-none text-right font-bold"
-                    value={studentName}
-                    onChange={(e) => setStudentName(e.target.value)}
-                  />
-                  <button 
-                    onClick={handleJoinSession}
-                    className="w-full bg-gray-900 text-white hover:bg-black py-4 rounded-2xl font-bold transition-all shadow-xl"
-                  >
-                    انضمام للحصة
-                  </button>
-                </div>
-              </div>
-            </motion.div>
-          </div>
-        </div>
-
-        {/* Promotional Banner */}
-        <div className="bg-yellow-400 py-4 overflow-hidden relative">
-          <motion.div 
-            animate={{ x: [0, -1000] }}
-            transition={{ duration: 20, repeat: Infinity, ease: "linear" }}
-            className="flex whitespace-nowrap gap-12 items-center"
-          >
-            {[1,2,3,4,5].map(i => (
-              <span key={i} className="text-black font-black text-xl uppercase italic">
-                🔥 عرض خاص: خصم 30% على الخطط السنوية لفترة محدودة! • انضم لأكثر من 10,000 معلم متميز • جرب النسخة الاحترافية الآن 🔥
-              </span>
-            ))}
-          </motion.div>
-        </div>
-
-        {/* Founder & Management Section */}
-        <div className="bg-white py-24 border-t border-gray-100">
-          <div className="max-w-6xl mx-auto px-6">
-            <div className="flex flex-col lg:flex-row items-center gap-16">
+            <div className="max-w-7xl mx-auto px-6 w-full flex flex-col lg:flex-row items-center gap-16 py-20 relative z-10">
               <motion.div 
-                initial={{ opacity: 0, scale: 0.9 }}
-                whileInView={{ opacity: 1, scale: 1 }}
-                viewport={{ once: true }}
-                className="relative group"
+                initial={{ opacity: 0, x: 50 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ duration: 0.8, ease: "easeOut" }}
+                className="flex-1 text-right"
               >
-                <div className="absolute inset-0 bg-emerald-500 rounded-[4rem] rotate-6 group-hover:rotate-3 transition-transform duration-500"></div>
-                <div className="relative w-80 h-[28rem] rounded-[4rem] overflow-hidden border-8 border-white shadow-2xl">
+                <motion.div 
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.2 }}
+                  className="inline-flex items-center gap-2 px-6 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-full font-bold text-sm mb-8 uppercase tracking-widest shadow-lg shadow-blue-200"
+                >
+                  <Sparkles size={16} /> منصة المستقبل التعليمية
+                </motion.div>
+                
+                <h1 className="text-7xl lg:text-9xl font-bold text-gray-900 mb-8 tracking-tighter leading-[0.9]">
+                  تعلم <span className="text-blue-600 relative">
+                    بذكاء
+                    <svg className="absolute -bottom-2 left-0 w-full h-4 text-blue-200 -z-10" viewBox="0 0 100 20" preserveAspectRatio="none">
+                      <path d="M0 10 Q 25 20 50 10 T 100 10" stroke="currentColor" strokeWidth="8" fill="none" />
+                    </svg>
+                  </span><br />
+                  <span className="bg-clip-text text-transparent bg-gradient-to-r from-blue-600 via-indigo-500 to-purple-600 animate-gradient-x drop-shadow-sm">
+                    تقدم بسرعة
+                  </span>
+                </h1>
+                
+                <p className="text-2xl text-gray-500 font-medium mb-12 max-w-xl leading-relaxed">
+                  اكتشف تجربة تعليمية فريدة تجمع بين التكنولوجيا المتطورة وأفضل المناهج الأكاديمية. مستقبلك يبدأ من هنا.
+                </p>
+                
+                <div className="flex flex-wrap items-center gap-6 justify-end">
+                  <motion.button 
+                    whileHover={{ scale: 1.05, boxShadow: "0 20px 40px -10px rgba(16,185,129,0.4)" }}
+                    whileTap={{ scale: 0.95 }}
+                    onClick={() => {
+                      if (role) {
+                        setCurrentPage('board');
+                      } else {
+                        openRegistration(null);
+                      }
+                    }}
+                    className="bg-emerald-600 text-white px-12 py-6 rounded-3xl text-xl font-bold shadow-2xl shadow-emerald-200 transition-all flex items-center gap-3"
+                  >
+                    <span>دخول السبورة الذكية</span>
+                    <Layout size={24} />
+                  </motion.button>
+
+                  <motion.button 
+                    whileHover={{ scale: 1.05, boxShadow: "0 20px 40px -10px rgba(59,130,246,0.4)" }}
+                    whileTap={{ scale: 0.95 }}
+                    onClick={() => openRegistration('student')}
+                    className="relative group overflow-hidden bg-blue-600 text-white px-12 py-6 rounded-3xl text-xl font-bold shadow-2xl shadow-blue-200 transition-all flex items-center gap-3"
+                  >
+                    <span>ابدأ رحلتك كطالب</span>
+                    <ArrowLeft size={24} />
+                    <div className="absolute inset-0 bg-gradient-to-r from-blue-400 to-indigo-400 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+                  </motion.button>
+                  
+                  <motion.button 
+                    whileHover={{ scale: 1.05, backgroundColor: "rgba(59, 130, 246, 0.05)" }}
+                    whileTap={{ scale: 0.95 }}
+                    onClick={() => openRegistration('teacher')}
+                    className="bg-white text-blue-600 border-4 border-blue-600 px-12 py-6 rounded-3xl text-xl font-bold transition-all"
+                  >
+                    انضم كمعلم
+                  </motion.button>
+                </div>
+
+                {/* Join Session Section for Students */}
+                <motion.div 
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.4 }}
+                  className="mt-12 p-8 bg-white/50 backdrop-blur-xl rounded-[3rem] border-4 border-white shadow-xl max-w-xl ml-auto"
+                >
+                  <h3 className="text-2xl font-black text-gray-900 mb-6">دخول حصة مباشرة</h3>
+                  <div className="flex flex-col gap-4">
+                    <input 
+                      type="text"
+                      placeholder="أدخل كود الحصة"
+                      value={sessionCode}
+                      onChange={(e) => setSessionCode(e.target.value)}
+                      className="w-full px-6 py-4 rounded-2xl border-2 border-gray-100 focus:border-blue-600 outline-none font-bold text-center text-2xl tracking-widest"
+                    />
+                    <input 
+                      type="text"
+                      placeholder="اسم الطالب"
+                      value={studentName}
+                      onChange={(e) => setStudentName(e.target.value)}
+                      className="w-full px-6 py-4 rounded-2xl border-2 border-gray-100 focus:border-blue-600 outline-none font-bold text-center"
+                    />
+                    <button 
+                      onClick={handleJoinSession}
+                      disabled={!sessionCode || !studentName}
+                      className="w-full bg-blue-600 text-white py-4 rounded-2xl font-black text-xl shadow-lg shadow-blue-200 hover:bg-blue-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      دخول الآن
+                    </button>
+                  </div>
+                </motion.div>
+
+                <div className="mt-16 flex items-center justify-end gap-8">
+                  <div className="flex -space-x-4 space-x-reverse">
+                    {[1, 2, 3, 4].map((i) => (
+                      <img 
+                        key={i}
+                        src={`https://i.pravatar.cc/150?u=${i}`} 
+                        alt="User" 
+                        className="w-12 h-12 rounded-full border-4 border-white shadow-lg"
+                        referrerPolicy="no-referrer"
+                      />
+                    ))}
+                  </div>
+                  <div className="text-right">
+                    <p className="text-gray-900 font-bold">+10k طالب</p>
+                    <p className="text-gray-400 text-sm font-bold">يثقون بنا حول العالم</p>
+                  </div>
+                </div>
+              </motion.div>
+
+              <motion.div 
+                initial={{ opacity: 0, scale: 0.8 }}
+                animate={{ opacity: 1, scale: 1 }}
+                transition={{ duration: 1, ease: "easeOut" }}
+                className="flex-1 relative"
+              >
+                <div className="relative rounded-[5rem] overflow-hidden shadow-[0_60px_120px_-20px_rgba(59,130,246,0.3)] border-[12px] border-white group">
                   <img 
-                    src="https://images.unsplash.com/photo-1560250097-0b93528c311a?auto=format&fit=crop&q=80&w=1000" 
-                    alt="Platform Manager" 
-                    className="w-full h-full object-cover"
+                    src="https://images.unsplash.com/photo-1523240795612-9a054b0db644?auto=format&fit=crop&q=80&w=1000" 
+                    alt="Education" 
+                    className="w-full h-full object-cover transition-transform duration-1000 group-hover:scale-110"
                     referrerPolicy="no-referrer"
                   />
-                </div>
-                <div className="absolute -bottom-6 -right-6 bg-gray-900 text-white p-6 rounded-3xl shadow-xl">
-                  <p className="font-black text-xl">أ. عمر النجدي</p>
-                  <p className="text-emerald-400 text-sm font-bold">المؤسس والمدير التنفيذي</p>
+                  <div className="absolute inset-0 bg-gradient-to-tr from-blue-600/20 to-transparent mix-blend-overlay"></div>
+                  
+                  {/* Floating Elements */}
+                  <motion.div 
+                    animate={{ y: [0, -20, 0] }}
+                    transition={{ duration: 4, repeat: Infinity, ease: "easeInOut" }}
+                    className="absolute top-10 -right-10 bg-white p-6 rounded-[2rem] shadow-2xl border border-blue-50 z-20"
+                  >
+                    <div className="flex items-center gap-4">
+                      <div className="bg-emerald-100 p-3 rounded-2xl text-emerald-600">
+                        <Trophy size={24} />
+                      </div>
+                      <div className="text-right">
+                        <p className="text-xl font-black text-gray-900">الأولى عربياً</p>
+                        <p className="text-xs font-bold text-gray-400 uppercase tracking-widest">في جودة المحتوى</p>
+                      </div>
+                    </div>
+                  </motion.div>
+
+                  <motion.div 
+                    animate={{ y: [0, 20, 0] }}
+                    transition={{ duration: 5, repeat: Infinity, ease: "easeInOut", delay: 1 }}
+                    className="absolute bottom-20 -left-10 bg-white p-6 rounded-[2rem] shadow-2xl border border-blue-50 z-20"
+                  >
+                    <div className="flex items-center gap-4">
+                      <div className="bg-blue-100 p-3 rounded-2xl text-blue-600">
+                        <Users size={24} />
+                      </div>
+                      <div className="text-right">
+                        <p className="text-xl font-black text-gray-900">+500 معلم</p>
+                        <p className="text-xs font-bold text-gray-400 uppercase tracking-widest">خبير ومحترف</p>
+                      </div>
+                    </div>
+                  </motion.div>
                 </div>
               </motion.div>
+            </div>
+          </section>
 
-              <div className="flex-1 space-y-8 text-center lg:text-right">
-                <div className="space-y-4">
-                  <h2 className="text-4xl font-black text-gray-900 leading-tight">رؤيتنا لمستقبل <span className="text-emerald-600">التعليم الرقمي</span></h2>
-                  <div className="w-20 h-2 bg-emerald-500 rounded-full mx-auto lg:mr-0 lg:ml-auto"></div>
-                </div>
-                
-                <p className="text-xl text-gray-600 leading-relaxed font-medium italic">
-                  "نحن نؤمن بأن كل معلم يستحق الأدوات التي تمكنه من الإبداع، وكل طالب يستحق تجربة تعليمية مشوقة. مهمتنا هي سد الفجوة بين التكنولوجيا والتعليم بلمسة إنسانية وذكاء اصطناعي يخدم المعلم لا يستبدله."
-                </p>
+          {/* Services Section */}
+          <Services />
 
-                <div className="grid grid-cols-2 gap-6 pt-4">
-                  <div className="bg-gray-50 p-6 rounded-3xl border border-gray-100">
-                    <p className="text-3xl font-black text-emerald-600 mb-1">+30 سنة</p>
-                    <p className="text-gray-500 text-sm font-bold">خبرة في تكنولوجيا التعليم</p>
+          {/* About Us Section */}
+          <AboutUs />
+
+          {/* Service Corner Section */}
+          <ServiceCorner />
+
+          {/* Start Path Section */}
+          <StartPath onSubscribe={() => openRegistration(null)} />
+
+          {/* Testimonials Section */}
+          <Testimonials />
+
+          {/* Contact Section */}
+          <Contact />
+
+          {/* Promotional Banner */}
+          <div className="bg-yellow-400 py-4 overflow-hidden relative">
+            <motion.div 
+              animate={{ x: [0, -1000] }}
+              transition={{ duration: 20, repeat: Infinity, ease: "linear" }}
+              className="flex whitespace-nowrap gap-12 text-black font-black text-xl uppercase tracking-widest"
+            >
+              {[...Array(10)].map((_, i) => (
+                <span key={i}>• تعلم بذكاء • تقدم بسرعة • مستقبلك يبدأ هنا •</span>
+              ))}
+            </motion.div>
+          </div>
+
+          {/* Founder Section */}
+          <section className="py-32 bg-white font-ibm overflow-hidden relative">
+            <div className="max-w-7xl mx-auto px-6">
+              <div className="flex flex-col lg:flex-row items-center gap-24">
+                <motion.div 
+                  initial={{ opacity: 0, x: 50 }}
+                  whileInView={{ opacity: 1, x: 0 }}
+                  viewport={{ once: true }}
+                  className="flex-1 relative"
+                >
+                  <div className="relative">
+                    <div className="absolute -top-10 -right-10 w-64 h-64 bg-blue-600/10 rounded-full blur-3xl"></div>
+                    <div className="relative rounded-[5rem] overflow-hidden shadow-2xl border-[12px] border-white rotate-3 group">
+                      <img 
+                        src="https://images.unsplash.com/photo-1560250097-0b93528c311a?auto=format&fit=crop&q=80&w=1000" 
+                        alt="Founder" 
+                        className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-1000"
+                        referrerPolicy="no-referrer"
+                      />
+                    </div>
                   </div>
-                  <div className="bg-gray-50 p-6 rounded-3xl border border-gray-100">
-                    <p className="text-3xl font-black text-emerald-600 mb-1">100%</p>
-                    <p className="text-gray-500 text-sm font-bold">التزام بجودة المحتوى</p>
+                </motion.div>
+                <motion.div 
+                  initial={{ opacity: 0, x: -50 }}
+                  whileInView={{ opacity: 1, x: 0 }}
+                  viewport={{ once: true }}
+                  className="flex-1 text-right"
+                >
+                  <div className="inline-flex items-center gap-2 px-4 py-2 bg-blue-50 text-blue-600 rounded-full text-sm font-bold mb-8 uppercase tracking-widest">
+                    <Sparkles size={16} /> رؤيتنا
                   </div>
-                </div>
+                  <h2 className="text-6xl font-bold text-gray-900 mb-10 tracking-tighter leading-tight">كلمة مؤسس <span className="text-blue-600">المنصة</span></h2>
+                  <div className="relative">
+                    <Quote size={64} className="absolute -top-10 -right-10 text-blue-50 -z-10" />
+                    <p className="text-2xl text-gray-600 font-medium leading-relaxed mb-12">
+                      "نحن نؤمن أن التعليم هو المفتاح الحقيقي للتغيير. هدفنا هو توفير بيئة تعليمية محفزة تجمع بين المتعة والفائدة، وتساعد كل طالب على اكتشاف إمكاناته الكاملة وبناء مستقبل مشرق."
+                    </p>
+                  </div>
+                  <div className="flex items-center justify-end gap-6">
+                    <div className="text-right">
+                      <p className="text-2xl font-bold text-blue-600">أ. يوسف</p>
+                      <p className="text-gray-400 font-bold uppercase tracking-widest">مؤسس المنصة التعليمية</p>
+                    </div>
+                    <div className="w-16 h-1 bg-blue-600 rounded-full"></div>
+                  </div>
+                </motion.div>
               </div>
             </div>
-          </div>
-        </div>
+          </section>
 
-        {/* Pricing Section */}
-        <div className="max-w-6xl mx-auto py-24 px-6">
-          <div className="text-center mb-16">
-            <h2 className="text-4xl font-black text-gray-900 mb-4">خطط تناسب طموحك</h2>
-            <p className="text-gray-500 text-lg">اختر الخطة التي تساعدك على تقديم أفضل تجربة تعليمية لطلابك</p>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-            {/* Annual Plan */}
-            <motion.div 
-              whileHover={{ y: -10 }}
-              className="bg-white p-8 rounded-[3rem] shadow-xl border border-gray-100 flex flex-col"
-            >
-              <div className="mb-8">
-                <h3 className="text-xl font-bold text-gray-900 mb-2">الخطة السنوية</h3>
-                <div className="flex items-baseline gap-1">
-                  <span className="text-4xl font-black text-emerald-600">50$</span>
-                  <span className="text-gray-400">/ سنة</span>
-                </div>
+          {/* Pricing Section */}
+          <section className="py-32 bg-slate-50 font-ibm overflow-hidden relative">
+            <div className="max-w-7xl mx-auto px-6 relative z-10">
+              <div className="text-center mb-24">
+                <motion.div 
+                  initial={{ opacity: 0, y: 20 }}
+                  whileInView={{ opacity: 1, y: 0 }}
+                  viewport={{ once: true }}
+                  className="inline-flex items-center gap-2 px-4 py-2 bg-blue-50 text-blue-600 rounded-full text-sm font-bold mb-6 uppercase tracking-widest"
+                >
+                  <Sparkles size={16} /> خطط الاشتراك
+                </motion.div>
+                <h2 className="text-6xl font-bold text-gray-900 tracking-tighter">استثمر في <span className="text-blue-600">مستقبلك</span></h2>
               </div>
-              <ul className="space-y-4 mb-8 flex-1">
-                {['وصول كامل لجميع الألعاب', 'مساحة تخزين غير محدودة', 'دعم فني متميز', 'تقارير أداء الطلاب'].map((feat, i) => (
-                  <li key={i} className="flex items-center gap-2 text-gray-600">
-                    <CheckCircle size={18} className="text-emerald-500" />
-                    {feat}
-                  </li>
+              
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-10">
+                {[
+                  { title: 'الخطة الأساسية', price: 'مجاناً', features: ['وصول محدود للدورات', 'اختبارات بسيطة', 'دعم فني عبر البريد'], color: 'gray' },
+                  { title: 'الخطة الاحترافية', price: '29$', features: ['وصول كامل للدورات', 'شهادات إتمام', 'مسارات تعلم مخصصة', 'دعم فني مباشر'], popular: true, color: 'blue' },
+                  { title: 'خطة المؤسسات', price: 'تواصل معنا', features: ['حسابات متعددة', 'لوحة تحكم إدارية', 'تقارير أداء مفصلة', 'تدريب مخصص'], color: 'indigo' }
+                ].map((plan, i) => (
+                  <motion.div 
+                    key={i}
+                    initial={{ opacity: 0, y: 30 }}
+                    whileInView={{ opacity: 1, y: 0 }}
+                    viewport={{ once: true }}
+                    transition={{ delay: i * 0.1 }}
+                    className={`bg-white p-12 rounded-[4rem] shadow-2xl border-8 ${plan.popular ? 'border-blue-600 scale-105 z-20' : 'border-white'} text-center relative group hover:shadow-blue-100 transition-all duration-500`}
+                  >
+                    {plan.popular && (
+                      <div className="absolute -top-6 left-1/2 -translate-x-1/2 bg-blue-600 text-white px-8 py-2 rounded-full font-bold text-sm uppercase tracking-widest shadow-xl">
+                        الأكثر طلباً
+                      </div>
+                    )}
+                    <h3 className="text-3xl font-bold mb-6 text-gray-900">{plan.title}</h3>
+                    <div className="text-6xl font-bold mb-10 text-blue-600 tracking-tighter">{plan.price}</div>
+                    <ul className="space-y-6 mb-12 text-gray-500 font-medium text-lg">
+                      {plan.features.map((f, j) => (
+                        <li key={j} className="flex items-center justify-center gap-3">
+                          <Check size={18} className="text-emerald-500" />
+                          {f}
+                        </li>
+                      ))}
+                    </ul>
+                    <motion.button 
+                      whileHover={{ scale: 1.05 }}
+                      whileTap={{ scale: 0.95 }}
+                      onClick={() => openRegistration()}
+                      className={`w-full py-6 rounded-3xl font-bold text-xl transition-all shadow-xl ${plan.popular ? 'bg-blue-600 text-white shadow-blue-200 hover:bg-blue-700' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
+                    >
+                      ابدأ الآن
+                    </motion.button>
+                  </motion.div>
                 ))}
-              </ul>
-              <button className="w-full py-4 rounded-2xl bg-emerald-50 text-emerald-600 font-bold hover:bg-emerald-100 transition-all">
-                اشترك الآن
-              </button>
-            </motion.div>
-
-            {/* 2 Years Plan - Featured */}
-            <motion.div 
-              whileHover={{ y: -10 }}
-              className="bg-gray-900 p-8 rounded-[3rem] shadow-2xl border-4 border-emerald-500 flex flex-col relative"
-            >
-              <div className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-emerald-500 text-white px-6 py-1 rounded-full text-sm font-bold">
-                الأكثر طلباً
               </div>
-              <div className="mb-8">
-                <h3 className="text-xl font-bold text-white mb-2">خطة السنتين</h3>
-                <div className="flex items-baseline gap-1">
-                  <span className="text-4xl font-black text-emerald-400">70$</span>
-                  <span className="text-gray-400">/ سنتين</span>
-                </div>
-              </div>
-              <ul className="space-y-4 mb-8 flex-1">
-                {['كل مميزات الخطة السنوية', 'أولوية في الميزات الجديدة', 'تدريب مباشر للمعلم', 'شهادة اعتماد المنصة'].map((feat, i) => (
-                  <li key={i} className="flex items-center gap-2 text-gray-300">
-                    <CheckCircle size={18} className="text-emerald-400" />
-                    {feat}
-                  </li>
-                ))}
-              </ul>
-              <button className="w-full py-4 rounded-2xl bg-emerald-500 text-white font-bold hover:bg-emerald-600 transition-all shadow-lg shadow-emerald-500/20">
-                اشترك الآن
-              </button>
-            </motion.div>
-
-            {/* 3 Years Plan */}
-            <motion.div 
-              whileHover={{ y: -10 }}
-              className="bg-white p-8 rounded-[3rem] shadow-xl border border-gray-100 flex flex-col"
-            >
-              <div className="mb-8">
-                <h3 className="text-xl font-bold text-gray-900 mb-2">الخطة الذهبية (3 سنوات)</h3>
-                <div className="flex items-baseline gap-1">
-                  <span className="text-4xl font-black text-emerald-600">100$</span>
-                  <span className="text-gray-400">/ 3 سنوات</span>
-                </div>
-              </div>
-              <ul className="space-y-4 mb-8 flex-1">
-                {['توفير هائل للمدارس', 'دعم فني VIP على مدار الساعة', 'تخصيص كامل للواجهة', 'تكامل مع أنظمة المدرسة'].map((feat, i) => (
-                  <li key={i} className="flex items-center gap-2 text-gray-600">
-                    <CheckCircle size={18} className="text-emerald-500" />
-                    {feat}
-                  </li>
-                ))}
-              </ul>
-              <button className="w-full py-4 rounded-2xl bg-gray-900 text-white font-bold hover:bg-black transition-all">
-                اشترك الآن
-              </button>
-            </motion.div>
-          </div>
-        </div>
-
-        {/* Footer */}
-        <footer className="bg-gray-50 py-12 border-t border-gray-100">
-          <div className="max-w-6xl mx-auto px-6 text-center">
-            <div className="flex items-center justify-center gap-2 mb-4">
-              <Sparkles className="text-emerald-600" />
-              <span className="font-black text-xl">سبورة الصف الذكية</span>
             </div>
-            <p className="text-gray-400 text-sm">© 2026 جميع الحقوق محفوظة. صُنع بكل حب للمعلمين العرب.</p>
-          </div>
-        </footer>
+          </section>
+
+          {/* Footer */}
+          <footer className="bg-gray-900 text-white py-24 font-ibm">
+            <div className="max-w-7xl mx-auto px-6">
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-16 text-right">
+                <div className="col-span-1 md:col-span-2">
+                  <div className="flex items-center gap-2 justify-end mb-8">
+                    <span className="text-3xl font-bold">المنصة التعليمية</span>
+                    <div className="bg-blue-600 p-2 rounded-lg"><GraduationCap size={32} /></div>
+                  </div>
+                  <p className="text-gray-400 font-medium text-lg leading-relaxed max-w-md ml-auto">
+                    نحن هنا لنغير طريقة التعلم. منصة تعليمية متطورة تهدف لتمكين الطلاب والمهنيين من تحقيق أهدافهم.
+                  </p>
+                </div>
+                <div>
+                  <h4 className="text-xl font-bold mb-8 uppercase tracking-widest text-blue-600">روابط سريعة</h4>
+                  <ul className="space-y-4 text-gray-400 font-medium">
+                    <li><button onClick={() => window.location.href = 'http://69b8a72297f51.site123.me/'} className="hover:text-white transition-colors">الرئيسية</button></li>
+                    <li><button onClick={() => scrollToSection('services')} className="hover:text-white transition-colors">خدماتنا</button></li>
+                    <li><button onClick={() => scrollToSection('about')} className="hover:text-white transition-colors">من نحن</button></li>
+                    <li><button onClick={() => scrollToSection('contact')} className="hover:text-white transition-colors">اتصل بنا</button></li>
+                  </ul>
+                </div>
+                <div>
+                  <h4 className="text-xl font-bold mb-8 uppercase tracking-widest text-blue-600">تواصل معنا</h4>
+                  <ul className="space-y-4 text-gray-400 font-medium">
+                    <li>الكويت، حولي، السالمية</li>
+                    <li>+965-66609234</li>
+                    <li>youssiff1982@gmail.com</li>
+                  </ul>
+                </div>
+              </div>
+              <div className="mt-24 pt-8 border-t border-white/10 text-center text-gray-500 font-medium">
+                © 2024 المنصة التعليمية. جميع الحقوق محفوظة.
+              </div>
+            </div>
+          </footer>
+        </main>
+        <AnimatePresence>
+          {isRegistrationOpen && (
+            <RegistrationForm 
+              isOpen={isRegistrationOpen} 
+              onClose={() => setIsRegistrationOpen(false)} 
+              initialRole={registrationInitialRole}
+              onComplete={(selectedRole) => {
+                setRole(selectedRole);
+                setCurrentPage('board');
+                setIsRegistrationOpen(false);
+              }}
+            />
+          )}
+        </AnimatePresence>
       </div>
     );
+  }
+
+  if (currentPage === 'board' && !role) {
+    setCurrentPage('home');
+    return null;
   }
 
   const handleCollectAnswers = async () => {
@@ -1040,13 +1303,28 @@ export default function App() {
       {/* Header */}
       <header className="bg-white border-b border-gray-200 px-6 py-3 flex items-center justify-between shadow-sm sticky top-0 z-50">
         <div className="flex items-center gap-4">
-          <div className="bg-emerald-600 text-white p-2 rounded-lg">
+          <div className="bg-emerald-600 text-white p-2 rounded-lg cursor-pointer" onClick={() => window.location.href = 'http://69b8a72297f51.site123.me/'}>
             <Layout size={20} />
           </div>
           <div>
             <h2 className="font-bold text-gray-900">سبورة الصف الذكية</h2>
             <p className="text-xs text-gray-500">كود الحصة: <span className="font-mono font-bold text-emerald-600">{sessionCode}</span></p>
           </div>
+          <button 
+            onClick={() => window.location.href = 'http://69b8a72297f51.site123.me/'}
+            className="mr-4 text-xs font-bold text-gray-400 hover:text-emerald-600 transition-colors"
+          >
+            العودة للرئيسية
+          </button>
+          <button 
+            onClick={() => {
+              setRole(null);
+              setCurrentPage('home');
+            }}
+            className="mr-4 text-xs font-bold text-red-500 hover:text-red-600 transition-colors"
+          >
+            تسجيل الخروج
+          </button>
         </div>
 
         {role === 'teacher' && (
@@ -2565,7 +2843,6 @@ export default function App() {
           </aside>
         )}
       </main>
-      <ResourceLibrary />
 
       {/* Recording Help Modal */}
       <AnimatePresence>

@@ -71,13 +71,13 @@ export const StudentGradesDrawer: React.FC = () => {
       onMouseEnter={() => setIsOpen(true)}
       onMouseLeave={() => setIsOpen(false)}
     >
-      {/* Trigger Handle - Made much smaller */}
+      {/* Trigger Handle - Made extremely small as requested */}
       <motion.div 
-        className="bg-emerald-600/80 hover:bg-emerald-600 text-white w-2 h-32 rounded-r-full shadow-lg cursor-pointer flex flex-col items-center justify-center transition-all border-r border-emerald-400/30"
-        animate={{ x: isOpen ? -5 : 0 }}
+        className="bg-emerald-600/60 hover:bg-emerald-600 text-white w-1 h-16 rounded-r-full shadow-sm cursor-pointer flex flex-col items-center justify-center transition-all border-r border-emerald-400/20"
+        animate={{ x: isOpen ? -2 : 0 }}
       >
-        <div className="opacity-0 group-hover:opacity-100 transition-opacity">
-          <ChevronRight size={12} />
+        <div className="opacity-0">
+          <ChevronRight size={8} />
         </div>
       </motion.div>
 
